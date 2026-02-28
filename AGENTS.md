@@ -17,9 +17,10 @@ Prefer existing project patterns over invention.
 - `README.md`
 - `README.zh-CN.md`
 - `docs/architecture.md`
+- `docs/architecture.zh-CN.md`
+- `docs/google-oauth-setup.md`
+- `docs/google-oauth-setup.zh-CN.md`
 - `docs/privacy-boundary.md`
-- `docs/git-flow.md`
-- `docs/superpowers-overrides.md`
 - `.opencode/skills/code-standard/SKILL.md`
 - `.opencode/skills/doc-maintainer/SKILL.md`
 - `.opencode/skills/git-workflow/SKILL.md`

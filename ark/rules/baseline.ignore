@@ -1,0 +1,30 @@
+# Baseline ignore rules adapted from common open-source .gitignore templates.
+
+# VCS
+.git/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+.next/
+
+# Build outputs
+dist/
+build/
+target/
+out/
+
+# IDE
+.idea/
+.vscode/
+
+# System cache
+.cache/

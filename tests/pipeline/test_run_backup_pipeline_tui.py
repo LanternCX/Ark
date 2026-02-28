@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from ark.pipeline import run_backup as run_backup_module
 from ark.pipeline.run_backup import run_backup_pipeline
 
 
@@ -82,3 +85,183 @@ def test_run_backup_pipeline_filters_stage2_candidates_by_whitelist(tmp_path) ->
     assert len(observed_paths) == 1
     assert observed_paths[0].endswith("notes.md")
     assert any("Tier candidates: 1" in line for line in logs)
+
+
+def test_sample_path_rows_use_current_home_directory() -> None:
+    rows = run_backup_module._sample_path_rows()
+
+    home_prefix = str(Path.home())
+    assert all(row.path.startswith(home_prefix) for row in rows)
+
+
+def test_run_backup_pipeline_logs_when_using_sample_data() -> None:
+    logs = run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=None,
+        stage1_review_fn=lambda _rows: {".pdf", ".jpg"},
+        stage3_review_fn=lambda rows: {row.path for row in rows[:1]},
+    )
+
+    assert any("using sample data" in line.lower() for line in logs)
+
+
+def test_run_backup_pipeline_does_not_use_sample_data_when_sources_configured_but_invalid() -> (
+    None
+):
+    logs = run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[Path("/path/that/does/not/exist")],
+        stage1_review_fn=lambda _rows: set(),
+        stage3_review_fn=lambda _rows: set(),
+    )
+
+    assert not any("using sample data" in line.lower() for line in logs)
+    assert any("no files discovered" in line.lower() for line in logs)
+
+
+def test_run_backup_pipeline_applies_suffix_risk_overrides(tmp_path) -> None:
+    (tmp_path / "cache.tmp").write_text("cache", encoding="utf-8")
+    observed_rows = []
+    observed_ext_batches: list[list[str]] = []
+
+    def fake_stage1_review(rows):
+        nonlocal observed_rows
+        observed_rows = rows
+        return {row.ext for row in rows if row.label == "keep"}
+
+    def fake_suffix_risk(exts: list[str]) -> dict[str, dict[str, object]]:
+        observed_ext_batches.append(exts)
+        return {
+            ".tmp": {
+                "risk": "high_value",
+                "confidence": 0.95,
+                "reason": "Requested by user policy",
+            }
+        }
+
+    run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[tmp_path],
+        stage1_review_fn=fake_stage1_review,
+        stage3_review_fn=lambda _rows: set(),
+        suffix_risk_fn=fake_suffix_risk,
+    )
+
+    assert len(observed_rows) == 1
+    assert observed_rows[0].ext == ".tmp"
+    assert observed_rows[0].label == "drop"
+    assert "hard" in observed_rows[0].reason.lower()
+    assert observed_ext_batches == [[]]
+
+
+def test_run_backup_pipeline_uses_ai_to_choose_non_harddrop_suffixes(tmp_path) -> None:
+    (tmp_path / "report.abc").write_text("content", encoding="utf-8")
+
+    observed_rows = []
+
+    def fake_stage1_review(rows):
+        nonlocal observed_rows
+        observed_rows = rows
+        return {row.ext for row in rows if row.label == "keep"}
+
+    run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[tmp_path],
+        stage1_review_fn=fake_stage1_review,
+        stage3_review_fn=lambda _rows: set(),
+        suffix_risk_fn=lambda _exts: {
+            ".abc": {
+                "risk": "low_value",
+                "confidence": 0.91,
+                "reason": "Model judged non-user artifact",
+            }
+        },
+    )
+
+    assert len(observed_rows) == 1
+    assert observed_rows[0].ext == ".abc"
+    assert observed_rows[0].label == "drop"
+    assert "model judged" in observed_rows[0].reason.lower()
+
+
+def test_run_backup_pipeline_uses_rule_when_one_suffix_parse_falls_back(
+    tmp_path,
+) -> None:
+    (tmp_path / "note.txt").write_text("content", encoding="utf-8")
+    (tmp_path / "junk.apache").write_text("content", encoding="utf-8")
+
+    observed_rows = []
+
+    def fake_stage1_review(rows):
+        nonlocal observed_rows
+        observed_rows = rows
+        return {row.ext for row in rows if row.label == "keep"}
+
+    run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[tmp_path],
+        stage1_review_fn=fake_stage1_review,
+        stage3_review_fn=lambda _rows: set(),
+        suffix_risk_fn=lambda _exts: {
+            ".txt": {
+                "risk": "high_value",
+                "confidence": 0.9,
+                "reason": "User notes",
+            },
+            ".apache": {
+                "risk": "neutral",
+                "confidence": 0.0,
+                "reason": "LLM parse fallback",
+            },
+        },
+    )
+
+    by_ext = {row.ext: row for row in observed_rows}
+    assert by_ext[".txt"].label == "keep"
+    assert by_ext[".apache"].label == "drop"
+    assert "likely" in by_ext[".apache"].reason.lower()
+
+
+def test_run_backup_pipeline_passes_full_paths_to_path_risk_function(tmp_path) -> None:
+    (tmp_path / "a.txt").write_text("a", encoding="utf-8")
+    (tmp_path / "b.tmp").write_text("b", encoding="utf-8")
+    observed_paths: list[str] = []
+    observed_stage3_rows = []
+
+    def fake_path_risk(paths: list[str]) -> dict[str, dict[str, object]]:
+        nonlocal observed_paths
+        observed_paths = paths
+        return {
+            paths[1]: {
+                "risk": "low_value",
+                "confidence": 0.9,
+                "reason": "Likely temp file",
+                "score": 0.1,
+            }
+        }
+
+    def fake_stage3_review(rows):
+        nonlocal observed_stage3_rows
+        observed_stage3_rows = rows
+        return set()
+
+    run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[tmp_path],
+        stage1_review_fn=lambda rows: {row.ext for row in rows},
+        stage3_review_fn=fake_stage3_review,
+        path_risk_fn=fake_path_risk,
+        send_full_path_to_ai=True,
+    )
+
+    assert all(str(tmp_path) in item for item in observed_paths)
+    row_by_path = {row.path: row for row in observed_stage3_rows}
+    low_path = str(tmp_path / "b.tmp")
+    assert row_by_path[low_path].ai_risk == "low_value"
+    assert "Likely temp" in row_by_path[low_path].reason
