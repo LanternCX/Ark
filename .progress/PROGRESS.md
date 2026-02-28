@@ -35,3 +35,4 @@ abc123d (or TBD)
 | Page ID | Date | Title | Path | Keywords |
 | --- | --- | --- | --- | --- |
 | 2026-02-28-1 | 2026-02-28 | Merge Ark scaffold into dev and continue branch work | `.progress/entries/2026/2026-02-28-1.md` | git-flow, merge, governance, skills |
+| 2026-02-28-2 | 2026-02-28 | Switch Ark to root-command TUI configuration with persistent runtime settings | `.progress/entries/2026/2026-02-28-2.md` | cli, tui, config, persistence, tdd |
