@@ -18,6 +18,7 @@ Core principle: integrate through `dev`, release through `main`, and keep histor
 - Use Angular conventional commit style: `feat:`, `fix:`, `docs:`, `chore:`, etc.
 - Include co-author trailer when requested:
   `Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>`.
+- At the start of each new session, explicitly ask whether commits in this session should include the co-author trailer above.
 
 ## Merge Policy
 - Run tests before merge.
