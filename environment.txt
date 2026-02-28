@@ -1,0 +1,15 @@
+# Ark Windows test environment
+PLATFORM=windows
+PYTHON_VERSION>=3.10
+SHELL=powershell
+
+# Setup
+VENV_DIR=.venv
+INSTALL_CMD=python -m pip install -e ".[dev]"
+
+# Verify
+TEST_CMD=python -m pytest -q
+
+# Run
+RUN_MODULE_CMD=python -m ark.cli
+RUN_SCRIPT_CMD=ark
