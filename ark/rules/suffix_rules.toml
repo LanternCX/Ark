@@ -1,0 +1,35 @@
+# Suffix rules baseline derived from common open-source file type conventions.
+
+hard_drop = [
+  ".tmp", ".cache", ".log", ".bak", ".swp", ".part"
+]
+
+keep_default = [
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+  ".txt", ".md", ".rtf",
+  ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic",
+  ".py", ".js", ".ts", ".tsx", ".java", ".c", ".cpp", ".go", ".rs", ".json", ".yaml", ".yml", ".toml"
+]
+
+[categories]
+Document = [
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".rtf", ".csv"
+]
+Image = [
+  ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic", ".avif", ".svg"
+]
+Code = [
+  ".py", ".js", ".cjs", ".mjs", ".ts", ".tsx", ".cts", ".mts", ".java", ".c", ".cpp", ".h", ".go", ".rs", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".css", ".html", ".sh", ".bat", ".ps1"
+]
+Archive = [
+  ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"
+]
+Media = [
+  ".mp4", ".mov", ".mkv", ".mp3", ".wav", ".flac"
+]
+Executable = [
+  ".exe", ".msi", ".dmg", ".pkg", ".app", ".apk", ".bin"
+]
+"Temp/Cache" = [
+  ".tmp", ".cache", ".log", ".bak", ".swp", ".part"
+]

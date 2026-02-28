@@ -77,9 +77,9 @@ def check_llm_connectivity(
 ) -> tuple[bool, str]:
     """Run a minimal generation request and return connectivity status."""
     try:
-        classify_batch(
+        response = classify_batch(
             model=model,
-            prompt="Reply exactly with: pong",
+            prompt="hello",
             temperature=0.0,
             provider=provider,
             base_url=base_url,
@@ -89,6 +89,9 @@ def check_llm_connectivity(
             google_client_secret=google_client_secret,
             google_refresh_token=google_refresh_token,
         )
-        return True, "connectivity test succeeded"
+        message = response.strip() or "(empty response)"
+        if len(message) > 120:
+            message = f"{message[:117]}..."
+        return True, message
     except Exception as exc:  # pragma: no cover - exercised via tests
         return False, str(exc)

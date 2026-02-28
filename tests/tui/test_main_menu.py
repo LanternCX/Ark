@@ -129,6 +129,10 @@ def test_main_menu_can_save_llm_settings() -> None:
     assert saved[0].llm_provider == "openai"
     assert saved[0].llm_model == "gpt-4.1-mini-custom"
     assert saved[0].llm_api_key == "sk-test-key"
+    assert saved[0].ai_suffix_enabled is True
+    assert saved[0].ai_path_enabled is True
+    assert saved[0].send_full_path_to_ai is True
+    assert saved[0].ai_prune_mode == "hide_low_value"
 
 
 def test_main_menu_can_save_gemini_oauth_settings() -> None:
@@ -229,6 +233,7 @@ def test_main_menu_can_run_llm_connectivity_check() -> None:
     )
 
     assert any("LLM connectivity test passed" in line for line in output)
+    assert any("ok" in line for line in output)
 
 
 def test_main_menu_can_accept_recommended_model_without_custom_override() -> None:

@@ -28,6 +28,10 @@ def test_config_store_roundtrip(tmp_path) -> None:
         google_client_id="client-id",
         google_client_secret="client-secret",
         google_refresh_token="refresh-token",
+        ai_suffix_enabled=True,
+        ai_path_enabled=True,
+        send_full_path_to_ai=True,
+        ai_prune_mode="hide_low_value",
     )
 
     store.save(config)
@@ -54,3 +58,7 @@ def test_config_store_returns_default_when_file_missing(tmp_path) -> None:
     assert loaded.google_client_id == ""
     assert loaded.google_client_secret == ""
     assert loaded.google_refresh_token == ""
+    assert loaded.ai_suffix_enabled is True
+    assert loaded.ai_path_enabled is True
+    assert loaded.send_full_path_to_ai is False
+    assert loaded.ai_prune_mode == "hide_low_value"

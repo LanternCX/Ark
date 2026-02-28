@@ -21,6 +21,10 @@ class PipelineConfig:
     google_client_id: str = ""
     google_client_secret: str = ""
     google_refresh_token: str = ""
+    ai_suffix_enabled: bool = True
+    ai_path_enabled: bool = True
+    send_full_path_to_ai: bool = False
+    ai_prune_mode: str = "hide_low_value"
 
     def validate_for_execution(self) -> list[str]:
         """Return a list of validation errors blocking pipeline execution."""
@@ -43,4 +47,6 @@ class PipelineConfig:
                     errors.append("google client secret is required for gemini oauth")
                 if not self.google_refresh_token.strip():
                     errors.append("google refresh token is required for gemini oauth")
+        if self.ai_prune_mode not in {"hide_low_value", "show_all"}:
+            errors.append("ai prune mode must be hide_low_value or show_all")
         return errors
