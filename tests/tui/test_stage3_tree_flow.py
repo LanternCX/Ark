@@ -118,3 +118,33 @@ def test_run_stage3_review_can_show_low_value_branches_from_start() -> None:
 
     flattened = {value for page in seen_choices for value in page}
     assert "enter::/root/trash" in flattened
+
+
+def test_run_stage3_review_uses_tree_symbolic_choices_instead_of_verbs() -> None:
+    rows = [
+        PathReviewRow(
+            path="/root/docs/a.txt",
+            tier="tier1",
+            size_bytes=10,
+            reason="doc",
+            confidence=0.9,
+        )
+    ]
+    captured_names: list[str] = []
+
+    def fake_action_prompt(_message: str, choices: list[dict]) -> str:
+        captured_names.extend([str(item["name"]) for item in choices])
+        return "done"
+
+    run_stage3_review(
+        rows,
+        action_prompt=fake_action_prompt,
+        confirm_prompt=lambda _msg, _default: True,
+        console=Console(record=True),
+    )
+
+    joined = "\n".join(captured_names)
+    assert "Toggle folder" not in joined
+    assert "Open folder" not in joined
+    assert "Toggle file" not in joined
+    assert any(name.startswith(("●", "◐", "○", "▸", "▾")) for name in captured_names)

@@ -105,9 +105,10 @@ This section explains each TUI stage in user terms: what it does, what happens i
 ### Stage 3: `Execute Backup`
 
 1. `Stage 1: Suffix Screening`
-   - Purpose: first-pass filtering by file suffix.
+   - Purpose: first-pass filtering by suffix categories.
    - Consequence: selected suffixes decide which files proceed.
    - Recommendation: be conservative if unsure; avoid filtering too aggressively.
+   - UI: suffixes are grouped by category buckets (Document/Image/Code/Archive/Media/Executable/Temp/Cache/Other).
 2. `Stage 2: Path Tiering`
    - Purpose: combine local signals and AI heuristics into tiers.
    - Consequence: tier outputs shape final candidate priority.
@@ -126,6 +127,7 @@ This section explains each TUI stage in user terms: what it does, what happens i
   - `unchecked`: no descendants selected
 - Toggling a folder applies recursively to all descendants.
 - Low-value branches can be hidden by default to reduce noise and can be shown again in the same review session.
+- Symbol-first controls use `●`/`◐`/`○` and `▸`/`▾` with rich-colored tree panels.
 
 ### Resumable Execution
 

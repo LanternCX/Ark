@@ -19,6 +19,99 @@ class SuffixReviewRow:
     reason: str
 
 
+_CATEGORY_ORDER = [
+    "Document",
+    "Image",
+    "Code",
+    "Archive",
+    "Media",
+    "Executable",
+    "Temp/Cache",
+    "Other",
+]
+
+
+def classify_suffix_category(ext: str) -> str:
+    """Classify extension into stage-1 category buckets."""
+    value = ext.lower()
+    if value in {
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        ".txt",
+        ".md",
+        ".rtf",
+    }:
+        return "Document"
+    if value in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic"}:
+        return "Image"
+    if value in {
+        ".py",
+        ".js",
+        ".ts",
+        ".tsx",
+        ".java",
+        ".c",
+        ".cpp",
+        ".go",
+        ".rs",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+    }:
+        return "Code"
+    if value in {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"}:
+        return "Archive"
+    if value in {".mp4", ".mov", ".mkv", ".mp3", ".wav", ".flac"}:
+        return "Media"
+    if value in {".exe", ".msi", ".dmg", ".pkg", ".app", ".apk"}:
+        return "Executable"
+    if value in {".tmp", ".cache", ".log", ".bak", ".swp", ".part"}:
+        return "Temp/Cache"
+    return "Other"
+
+
+def group_suffix_rows(rows: list[SuffixReviewRow]) -> dict[str, list[SuffixReviewRow]]:
+    """Group stage-1 rows by category with stable category order."""
+    grouped: dict[str, list[SuffixReviewRow]] = {name: [] for name in _CATEGORY_ORDER}
+    for row in rows:
+        grouped[classify_suffix_category(row.ext)].append(row)
+    return {name: values for name, values in grouped.items() if values}
+
+
+def flatten_grouped_suffix_choices(
+    grouped: dict[str, list[SuffixReviewRow]],
+) -> list[dict]:
+    """Build grouped checkbox choices with category headers."""
+    choices: list[dict] = []
+    for category in _CATEGORY_ORDER:
+        if category not in grouped:
+            continue
+        rows = grouped[category]
+        choices.append(
+            {
+                "name": f"[{category}]",
+                "value": f"header::{category}",
+                "disabled": "category",
+            }
+        )
+        for row in rows:
+            choices.append(
+                {
+                    "name": (
+                        f"  {row.ext:8} {row.label:4} conf={row.confidence:.2f} {row.reason}"
+                    ),
+                    "value": row.ext,
+                }
+            )
+    return choices
+
+
 def apply_default_selection(rows: list[dict], threshold: float) -> set[str]:
     """Select extensions that are keep-labeled with enough confidence."""
     selected: set[str] = set()
@@ -44,7 +137,16 @@ def render_stage1_table(
     table.add_column("Reason")
 
     for row in rows:
-        table.add_row(row.ext, row.label, row.tag, f"{row.confidence:.2f}", row.reason)
+        category = classify_suffix_category(row.ext)
+        style = _style_for_category(category)
+        table.add_row(
+            row.ext,
+            row.label,
+            f"{category}/{row.tag}",
+            f"{row.confidence:.2f}",
+            row.reason,
+            style=style,
+        )
     ui.print(table)
 
 
@@ -62,20 +164,11 @@ def run_stage1_review(
     ]
     defaults = sorted(apply_default_selection(normalized_rows, threshold))
 
-    choices = [
-        {
-            "name": (
-                f"{row.ext:8} | {row.label:4} | {row.tag:12} | "
-                f"conf={row.confidence:.2f} | {row.reason}"
-            ),
-            "value": row.ext,
-        }
-        for row in rows
-    ]
+    choices = flatten_grouped_suffix_choices(group_suffix_rows(rows))
 
     prompt_fn = checkbox_prompt or _default_checkbox_prompt
     selected = prompt_fn("Suffix whitelist selection", choices, defaults)
-    return set(selected)
+    return {item for item in selected if not str(item).startswith("header::")}
 
 
 def _default_checkbox_prompt(
@@ -94,3 +187,17 @@ def _default_checkbox_prompt(
         choices=prompt_choices,
     ).ask()
     return result or []
+
+
+def _style_for_category(category: str) -> str:
+    styles = {
+        "Document": "green",
+        "Image": "cyan",
+        "Code": "blue",
+        "Archive": "magenta",
+        "Media": "bright_cyan",
+        "Executable": "red",
+        "Temp/Cache": "yellow",
+        "Other": "white",
+    }
+    return styles.get(category, "white")

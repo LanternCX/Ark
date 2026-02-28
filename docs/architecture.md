@@ -22,10 +22,11 @@ Ark enforces one-way dependencies:
 2. User edits settings in `Backup Settings` and `LLM Settings`.
 3. Settings persist to `~/.ark/config.json` via `JSONConfigStore`.
 4. `Execute Backup` runs staged pipeline in `ark/pipeline/run_backup.py`.
-5. Stage 1/2/3 decisions produce final selected paths.
-6. Stage 3 uses paginated tree navigation with tri-state folder selection.
-7. `backup.executor` mirrors selected files unless dry run.
-8. Runtime checkpoints persist resumable progress under `~/.ark/state/backup_runs`.
+5. Stage 1 groups suffixes by category buckets for layered decisions.
+6. Stage 1/2/3 decisions produce final selected paths.
+7. Stage 3 uses paginated tree navigation with tri-state folder selection and symbol-first UI controls.
+8. `backup.executor` mirrors selected files unless dry run.
+9. Runtime checkpoints persist resumable progress under `~/.ark/state/backup_runs`.
 
 ## 3. Configuration Model
 

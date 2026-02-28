@@ -5,7 +5,10 @@ from typing import Callable
 
 import questionary
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
+from rich.tree import Tree
 
 from ark.tui.tree_selection import SelectionState, TreeSelectionState, paginate_items
 
@@ -62,7 +65,8 @@ def run_stage3_review(
 ) -> set[str]:
     """Run final TUI review for backup path selection."""
     filtered_rows = [row for row in rows if row.tier in {"tier1", "tier2"}]
-    render_stage3_table(filtered_rows, console=console)
+    ui = console or Console()
+    _render_stage3_banner(ui, filtered_rows)
 
     if checkbox_prompt and action_prompt is None:
         selected = _run_checkbox_mode(filtered_rows, checkbox_prompt)
@@ -75,6 +79,7 @@ def run_stage3_review(
             hide_low_value_default=hide_low_value_default,
             resume_state=resume_state,
             checkpoint_callback=checkpoint_callback,
+            console=ui,
         )
 
     confirm_fn = confirm_prompt or _default_confirm_prompt
@@ -113,6 +118,7 @@ def _run_tree_mode(
     hide_low_value_default: bool,
     resume_state: dict | None,
     checkpoint_callback: Callable[[dict], None] | None,
+    console: Console,
 ) -> set[str]:
     """Run tree-based paginated decision flow."""
     defaults = {row.path for row in filtered_rows if row.tier == "tier1"}
@@ -145,13 +151,25 @@ def _run_tree_mode(
         page_items, total_pages = paginate_items(visible_nodes, page_size, page_index)
         page_index = max(0, min(page_index, total_pages - 1))
 
+        hidden_count = _hidden_node_count(nodes, visible_nodes)
+        _render_tree_snapshot(
+            state=state,
+            current_dir=current_dir,
+            nodes=page_items,
+            show_low_value=show_low_value,
+            hidden_count=hidden_count,
+            page_index=page_index,
+            total_pages=total_pages,
+            console=console,
+        )
+
         choices: list[dict] = []
         if current_dir:
-            choices.append({"name": ".. Up one level", "value": "up"})
+            choices.append({"name": "↩ ..", "value": "up"})
         if page_index > 0:
-            choices.append({"name": "Previous page", "value": "prev"})
+            choices.append({"name": "◀", "value": "prev"})
         if page_index < total_pages - 1:
-            choices.append({"name": "Next page", "value": "next"})
+            choices.append({"name": "▶", "value": "next"})
 
         for node in page_items:
             marker = _marker_for(state.selection_state(node))
@@ -159,41 +177,33 @@ def _run_tree_mode(
             if state.is_dir(node):
                 choices.append(
                     {
-                        "name": f"{marker} Toggle folder: {name}/",
+                        "name": f"{marker} 📁 {name}/",
                         "value": f"toggle::{node}",
                     }
                 )
                 choices.append(
                     {
-                        "name": f"Open folder: {name}/",
+                        "name": f"▸ 📁 {name}/",
                         "value": f"enter::{node}",
                     }
                 )
             else:
                 choices.append(
                     {
-                        "name": f"{marker} Toggle file: {name}",
+                        "name": f"{marker} 📄 {name}",
                         "value": f"toggle::{node}",
                     }
                 )
 
         choices.append(
             {
-                "name": (
-                    "Show low-value branches"
-                    if not show_low_value
-                    else "Hide low-value branches"
-                ),
+                "name": ("A: all" if not show_low_value else "F: filtered"),
                 "value": "toggle_low_value",
             }
         )
-        choices.append({"name": "Done", "value": "done"})
+        choices.append({"name": "✓", "value": "done"})
 
-        hidden_count = _hidden_node_count(nodes, visible_nodes)
-        message = (
-            f"Stage 3 Tree Review | dir={current_dir or '/'} | "
-            f"page={page_index + 1}/{total_pages} | hidden={hidden_count}"
-        )
+        message = f"dir={current_dir or '/'}  page={page_index + 1}/{total_pages}  hidden={hidden_count}"
         try:
             action = action_prompt(message, choices)
         except KeyboardInterrupt:
@@ -345,10 +355,10 @@ def _human_bytes(size_bytes: int) -> str:
 
 def _marker_for(state: SelectionState) -> str:
     if state == SelectionState.CHECKED:
-        return "[x]"
+        return "●"
     if state == SelectionState.PARTIAL:
-        return "[-]"
-    return "[ ]"
+        return "◐"
+    return "○"
 
 
 def _display_name(path: str) -> str:
@@ -373,3 +383,53 @@ def _is_visible_node(
 
 def _hidden_node_count(all_nodes: list[str], visible_nodes: list[str]) -> int:
     return max(0, len(all_nodes) - len(visible_nodes))
+
+
+def _render_stage3_banner(console: Console, rows: list[PathReviewRow]) -> None:
+    tier1 = len([row for row in rows if row.tier == "tier1"])
+    tier2 = len([row for row in rows if row.tier == "tier2"])
+    text = Text()
+    text.append("Stage 3 Tree Review", style="bold cyan")
+    text.append("  ")
+    text.append(f"tier1={tier1}", style="green")
+    text.append("  ")
+    text.append(f"tier2={tier2}", style="blue")
+    console.print(Panel(text, border_style="cyan"))
+
+
+def _render_tree_snapshot(
+    state: TreeSelectionState,
+    current_dir: str,
+    nodes: list[str],
+    show_low_value: bool,
+    hidden_count: int,
+    page_index: int,
+    total_pages: int,
+    console: Console,
+) -> None:
+    tree = Tree(
+        Text(f"{current_dir or '/'}", style="bold cyan"),
+        guide_style="dim",
+    )
+    for node in nodes:
+        marker = _marker_for(state.selection_state(node))
+        name = _display_name(node)
+        if state.is_dir(node):
+            style = "cyan" if marker != "○" else "bright_black"
+            tree.add(Text(f"{marker} {name}/", style=style))
+        else:
+            style = "green" if marker == "●" else "white"
+            tree.add(Text(f"{marker} {name}", style=style))
+
+    footer = Text()
+    footer.append("mode=", style="dim")
+    footer.append("all", style="yellow" if show_low_value else "dim")
+    footer.append("/", style="dim")
+    footer.append("filtered", style="yellow" if not show_low_value else "dim")
+    footer.append("  ", style="dim")
+    footer.append(f"hidden={hidden_count}", style="yellow")
+    footer.append("  ", style="dim")
+    footer.append(f"page={page_index + 1}/{total_pages}", style="blue")
+    console.print(
+        Panel(tree, border_style="blue", title="Directory Tree", subtitle=footer)
+    )
