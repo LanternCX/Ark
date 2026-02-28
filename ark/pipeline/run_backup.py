@@ -19,18 +19,32 @@ def run_backup_pipeline(
 ) -> list[str]:
     """Run staged review flow and return progress logs."""
     files_by_root = _collect_files_by_root(source_roots)
+    has_configured_sources = bool(source_roots)
+    using_sample_data = not files_by_root and not has_configured_sources
 
     logs: list[str] = [
         "Stage 1: Suffix Screening",
     ]
+    if using_sample_data:
+        logs.append(
+            "No valid source files discovered from configured roots; using sample data."
+        )
+    elif has_configured_sources and not files_by_root:
+        logs.append(
+            "No files discovered under configured source roots; review source paths in Settings."
+        )
 
-    suffix_rows = _build_stage1_rows(files_by_root)
+    suffix_rows = _build_stage1_rows(files_by_root, use_sample_rows=using_sample_data)
     review_stage1 = stage1_review_fn or run_stage1_review
     whitelist = review_stage1(suffix_rows)
     logs.append(f"Whitelist size: {len(whitelist)}")
 
     logs.append("Stage 2: Path Tiering")
-    path_rows = _build_stage2_rows(files_by_root, whitelist)
+    path_rows = _build_stage2_rows(
+        files_by_root,
+        whitelist,
+        use_sample_rows=using_sample_data,
+    )
     logs.append(f"Tier candidates: {len(path_rows)}")
 
     logs.append("Stage 3: Final Review and Backup")
@@ -80,23 +94,24 @@ def _sample_suffix_rows() -> list[SuffixReviewRow]:
 
 
 def _sample_path_rows() -> list[PathReviewRow]:
+    home = Path.home()
     return [
         PathReviewRow(
-            path="C:/Users/me/Documents/report.pdf",
+            path=str(home / "Documents" / "report.pdf"),
             tier="tier1",
             size_bytes=81234,
             reason="High-value user document path",
             confidence=0.93,
         ),
         PathReviewRow(
-            path="C:/Users/me/Pictures/holiday.jpg",
+            path=str(home / "Pictures" / "holiday.jpg"),
             tier="tier1",
             size_bytes=4_202_444,
             reason="Personal media with likely irreplaceable value",
             confidence=0.89,
         ),
         PathReviewRow(
-            path="C:/Users/me/Downloads/archive.zip",
+            path=str(home / "Downloads" / "archive.zip"),
             tier="tier2",
             size_bytes=132_100_230,
             reason="Potentially useful archive requiring manual confirmation",
@@ -119,9 +134,12 @@ def _collect_files_by_root(
     return files_by_root
 
 
-def _build_stage1_rows(files_by_root: dict[Path, list[Path]]) -> list[SuffixReviewRow]:
+def _build_stage1_rows(
+    files_by_root: dict[Path, list[Path]],
+    use_sample_rows: bool,
+) -> list[SuffixReviewRow]:
     if not files_by_root:
-        return _sample_suffix_rows()
+        return _sample_suffix_rows() if use_sample_rows else []
 
     discovered_extensions: set[str] = set()
     for paths in files_by_root.values():
@@ -131,7 +149,7 @@ def _build_stage1_rows(files_by_root: dict[Path, list[Path]]) -> list[SuffixRevi
             discovered_extensions.add(path.suffix.lower())
 
     if not discovered_extensions:
-        return _sample_suffix_rows()
+        return _sample_suffix_rows() if use_sample_rows else []
 
     rows: list[SuffixReviewRow] = []
     for ext in sorted(discovered_extensions):
@@ -169,10 +187,12 @@ def _stage1_heuristic(ext: str) -> tuple[str, str, float, str]:
 
 
 def _build_stage2_rows(
-    files_by_root: dict[Path, list[Path]], whitelist: set[str]
+    files_by_root: dict[Path, list[Path]],
+    whitelist: set[str],
+    use_sample_rows: bool,
 ) -> list[PathReviewRow]:
     if not files_by_root:
-        return _sample_path_rows()
+        return _sample_path_rows() if use_sample_rows else []
 
     rows: list[PathReviewRow] = []
     for paths in files_by_root.values():

@@ -36,10 +36,11 @@ def run_main_menu_flow() -> None:
 def _execute_backup(config: PipelineConfig) -> list[str]:
     stage1_review_fn = _non_interactive_stage1 if config.non_interactive else None
     stage3_review_fn = _non_interactive_stage3 if config.non_interactive else None
-    source_roots = [Path(item).resolve() for item in config.source_roots]
+    source_roots = [Path(item).expanduser().resolve() for item in config.source_roots]
+    target = str(Path(config.target).expanduser().resolve())
 
     return run_backup_pipeline(
-        target=config.target,
+        target=target,
         dry_run=config.dry_run,
         source_roots=source_roots,
         stage1_review_fn=stage1_review_fn,

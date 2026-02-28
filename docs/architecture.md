@@ -1,27 +1,59 @@
-# Ark Architecture
+# Ark Architecture (Developer)
 
-## Pipeline
+This document is developer-facing. For user operation flow, refer to TUI sections in `README.md`.
 
-Ark uses a staged pipeline:
+## 1. Layer Boundaries
 
-1. Collector
-2. Signals
-3. AI Router
-4. Decision Engine
-5. TUI Review
-6. Backup Executor
+Ark enforces one-way dependencies:
 
-## Runtime Entry
+`collector/signals/ai -> decision -> tui/backup -> cli`
 
-- CLI root command `ark` opens a top-level TUI menu.
-- TUI settings manage runtime config (`target`, `source_roots`, `dry_run`,
-  `non_interactive`).
-- Config is persisted in a local JSON file and reloaded on next run.
-- Pipeline execution remains orchestrated by `ark/pipeline/run_backup.py`.
+- `ark/collector/*`: file discovery and metadata extraction.
+- `ark/signals/*`: local heuristic scoring.
+- `ark/ai/*`: model batching/router/auth integration.
+- `ark/decision/*`: tier decision logic.
+- `ark/tui/*`: user interaction and review.
+- `ark/backup/*`: mirror copy execution.
+- `ark/cli.py`: entrypoint wiring only.
 
-## Design Principles
+## 2. Runtime Flow
 
-- High cohesion and low coupling.
-- Minimal hard-coded rules.
-- Provider-driven extensibility.
-- Human review required before backup execution.
+1. `ark` enters TUI main menu.
+2. User edits settings in `Backup Settings` and `LLM Settings`.
+3. Settings persist to `~/.ark/config.json` via `JSONConfigStore`.
+4. `Execute Backup` runs staged pipeline in `ark/pipeline/run_backup.py`.
+5. Stage 1/2/3 decisions produce final selected paths.
+6. `backup.executor` mirrors selected files unless dry run.
+
+## 3. Configuration Model
+
+`PipelineConfig` contains two groups:
+
+- Backup execution fields (`target`, `source_roots`, `dry_run`, `non_interactive`).
+- LLM fields (`llm_enabled`, provider/model/base URL/auth credentials).
+
+Validation rules run before execution. Typical blockers:
+
+- Missing target/source roots.
+- LLM enabled without provider/model.
+- Gemini OAuth selected without client id/client secret/refresh token.
+
+## 4. AI Routing Strategy
+
+- Non-Gemini providers default to LiteLLM API key flow.
+- Gemini supports:
+  - `api_key` mode.
+  - `google_oauth` mode with browser login and token refresh.
+- OAuth token refresh uses Google official auth SDK.
+
+## 5. Testing Contract
+
+- Add tests before behavior changes (TDD).
+- Keep tests under mirrored `tests/` paths.
+- Run focused tests first, then full `pytest`.
+
+## 6. Documentation Contract
+
+- User docs must remain bilingual in README (`README.md`, `README.zh-CN.md`).
+- Developer docs in `docs/` should avoid repeating skill governance content.
+- OAuth onboarding details live in `docs/google-oauth-setup.md` and `docs/google-oauth-setup.zh-CN.md`.

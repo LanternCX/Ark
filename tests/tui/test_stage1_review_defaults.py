@@ -2,6 +2,7 @@ from rich.console import Console
 
 from ark.tui.stage1_review import (
     SuffixReviewRow,
+    _default_checkbox_prompt,
     apply_default_selection,
     run_stage1_review,
 )
@@ -47,3 +48,31 @@ def test_run_stage1_review_uses_default_whitelist() -> None:
         console=Console(record=True),
     )
     assert whitelist == {".pdf"}
+
+
+def test_default_checkbox_prompt_sets_checked_choices(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakePrompt:
+        def ask(self) -> list[str]:
+            return [".pdf"]
+
+    def fake_checkbox(**kwargs):
+        captured.update(kwargs)
+        return FakePrompt()
+
+    monkeypatch.setattr("ark.tui.stage1_review.questionary.checkbox", fake_checkbox)
+
+    result = _default_checkbox_prompt(
+        message="Suffix whitelist selection",
+        choices=[
+            {"name": "pdf", "value": ".pdf"},
+            {"name": "tmp", "value": ".tmp"},
+        ],
+        default=[".pdf"],
+    )
+
+    assert result == [".pdf"]
+    assert "default" not in captured
+    assert captured["choices"][0]["checked"] is True
+    assert captured["choices"][1].get("checked") is not True

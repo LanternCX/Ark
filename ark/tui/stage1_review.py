@@ -82,7 +82,15 @@ def _default_checkbox_prompt(
     message: str, choices: list[dict], default: list[str]
 ) -> list[str]:
     """Default checkbox prompt using questionary."""
+    default_set = set(default)
+    prompt_choices = []
+    for choice in choices:
+        item = dict(choice)
+        item["checked"] = bool(item.get("value") in default_set)
+        prompt_choices.append(item)
+
     result = questionary.checkbox(
-        message=message, choices=choices, default=default
+        message=message,
+        choices=prompt_choices,
     ).ask()
     return result or []
