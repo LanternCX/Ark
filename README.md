@@ -2,6 +2,22 @@
 
 Ark is an AI-assisted backup agent for system migration and reinstall preparation.
 
+## Quick Start
+
+Run Ark with a single command:
+
+```bash
+ark
+```
+
+Ark opens a top-level TUI menu:
+
+1. `Settings`
+2. `Execute Backup`
+3. `Exit`
+
+All runtime options are configured in TUI and persisted locally.
+
 ## Core Workflow
 
 1. Stage 1: suffix screening with AI suggestions and manual TUI review.

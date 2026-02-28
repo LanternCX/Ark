@@ -4,41 +4,47 @@ from pathlib import Path
 
 import typer
 
+from ark.pipeline.config import PipelineConfig
 from ark.pipeline.run_backup import run_backup_pipeline
+from ark.state.config_store import JSONConfigStore
+from ark.tui.main_menu import run_main_menu
 from ark.tui.stage1_review import SuffixReviewRow
 from ark.tui.stage3_review import PathReviewRow
 
 app = typer.Typer(help="Ark backup agent")
-backup_app = typer.Typer(help="Backup commands")
-app.add_typer(backup_app, name="backup")
 
 
-@backup_app.command("run")
-def run_backup(
-    target: str = typer.Option(..., "--target", help="Backup target path"),
-    source: list[str] = typer.Option(
-        [], "--source", help="Source root path, repeat for multiple roots"
-    ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Run without file copy"),
-    non_interactive: bool = typer.Option(
-        False,
-        "--non-interactive",
-        help="Use default safe decisions without TUI prompts",
-    ),
-) -> None:
-    """Run backup pipeline."""
-    stage1_review_fn = _non_interactive_stage1 if non_interactive else None
-    stage3_review_fn = _non_interactive_stage3 if non_interactive else None
-    source_roots = [Path(item).resolve() for item in source] if source else None
+@app.callback(invoke_without_command=True)
+def root(ctx: typer.Context) -> None:
+    """Run Ark top-level TUI flow."""
+    if ctx.invoked_subcommand is None:
+        run_main_menu_flow()
 
-    for line in run_backup_pipeline(
-        target=target,
-        dry_run=dry_run,
+
+def run_main_menu_flow() -> None:
+    """Load persisted config and start interactive main menu."""
+    store = JSONConfigStore(Path.home() / ".ark" / "config.json")
+    config = store.load()
+
+    run_main_menu(
+        config=config,
+        save_config=store.save,
+        execute_backup=_execute_backup,
+    )
+
+
+def _execute_backup(config: PipelineConfig) -> list[str]:
+    stage1_review_fn = _non_interactive_stage1 if config.non_interactive else None
+    stage3_review_fn = _non_interactive_stage3 if config.non_interactive else None
+    source_roots = [Path(item).resolve() for item in config.source_roots]
+
+    return run_backup_pipeline(
+        target=config.target,
+        dry_run=config.dry_run,
         source_roots=source_roots,
         stage1_review_fn=stage1_review_fn,
         stage3_review_fn=stage3_review_fn,
-    ):
-        typer.echo(line)
+    )
 
 
 def _non_interactive_stage1(rows: list[SuffixReviewRow]) -> set[str]:
