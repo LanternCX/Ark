@@ -1,0 +1,117 @@
+name: Cross-platform Release
+
+run-name: Release ${{ github.ref_name }}
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build windows-x64
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=nightly-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          architecture: x64
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" pyinstaller
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: |
+          pyinstaller --clean --onefile \
+            --collect-all rich \
+            --hidden-import litellm \
+            --collect-data litellm \
+            --hidden-import tiktoken \
+            --hidden-import tiktoken_ext \
+            --hidden-import tiktoken_ext.openai_public \
+            --collect-data tiktoken_ext \
+            --hidden-import socksio \
+            --name "ark" ark/cli.py
+
+      - name: Bundle binary and config
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          BUNDLE="ark-${VERSION}-windows-x64"
+
+          mkdir -p "bundle/$BUNDLE"
+          cp "dist/ark.exe" "bundle/$BUNDLE/"
+
+          cat > "bundle/$BUNDLE/config.json" <<'EOF'
+          {
+            "target": "",
+            "source_roots": [],
+            "dry_run": false,
+            "non_interactive": false
+          }
+          EOF
+
+          python - <<'PY'
+          import shutil
+          from pathlib import Path
+
+          bundle_root = Path("bundle")
+          for pkg_dir in bundle_root.iterdir():
+              if pkg_dir.is_dir():
+                  shutil.make_archive(str(pkg_dir), "zip", root_dir=pkg_dir)
+          PY
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ark-${{ steps.version.outputs.VERSION }}-windows-x64
+          path: bundle/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ark-*
+          path: release_assets
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Ark ${{ github.ref_name }}
+          files: release_assets/*
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
