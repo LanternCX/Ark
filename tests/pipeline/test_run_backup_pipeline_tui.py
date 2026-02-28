@@ -124,6 +124,43 @@ def test_run_backup_pipeline_does_not_use_sample_data_when_sources_configured_bu
 def test_run_backup_pipeline_applies_suffix_risk_overrides(tmp_path) -> None:
     (tmp_path / "cache.tmp").write_text("cache", encoding="utf-8")
     observed_rows = []
+    observed_ext_batches: list[list[str]] = []
+
+    def fake_stage1_review(rows):
+        nonlocal observed_rows
+        observed_rows = rows
+        return {row.ext for row in rows if row.label == "keep"}
+
+    def fake_suffix_risk(exts: list[str]) -> dict[str, dict[str, object]]:
+        observed_ext_batches.append(exts)
+        return {
+            ".tmp": {
+                "risk": "high_value",
+                "confidence": 0.95,
+                "reason": "Requested by user policy",
+            }
+        }
+
+    run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[tmp_path],
+        stage1_review_fn=fake_stage1_review,
+        stage3_review_fn=lambda _rows: set(),
+        suffix_risk_fn=fake_suffix_risk,
+    )
+
+    assert len(observed_rows) == 1
+    assert observed_rows[0].ext == ".tmp"
+    assert observed_rows[0].label == "drop"
+    assert "hard" in observed_rows[0].reason.lower()
+    assert observed_ext_batches == [[]]
+
+
+def test_run_backup_pipeline_uses_ai_to_choose_non_harddrop_suffixes(tmp_path) -> None:
+    (tmp_path / "report.abc").write_text("content", encoding="utf-8")
+
+    observed_rows = []
 
     def fake_stage1_review(rows):
         nonlocal observed_rows
@@ -137,18 +174,57 @@ def test_run_backup_pipeline_applies_suffix_risk_overrides(tmp_path) -> None:
         stage1_review_fn=fake_stage1_review,
         stage3_review_fn=lambda _rows: set(),
         suffix_risk_fn=lambda _exts: {
-            ".tmp": {
-                "risk": "high_value",
-                "confidence": 0.95,
-                "reason": "Requested by user policy",
+            ".abc": {
+                "risk": "low_value",
+                "confidence": 0.91,
+                "reason": "Model judged non-user artifact",
             }
         },
     )
 
     assert len(observed_rows) == 1
-    assert observed_rows[0].ext == ".tmp"
-    assert observed_rows[0].label == "keep"
-    assert "Requested by user policy" in observed_rows[0].reason
+    assert observed_rows[0].ext == ".abc"
+    assert observed_rows[0].label == "drop"
+    assert "model judged" in observed_rows[0].reason.lower()
+
+
+def test_run_backup_pipeline_uses_rule_when_one_suffix_parse_falls_back(
+    tmp_path,
+) -> None:
+    (tmp_path / "note.txt").write_text("content", encoding="utf-8")
+    (tmp_path / "junk.apache").write_text("content", encoding="utf-8")
+
+    observed_rows = []
+
+    def fake_stage1_review(rows):
+        nonlocal observed_rows
+        observed_rows = rows
+        return {row.ext for row in rows if row.label == "keep"}
+
+    run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[tmp_path],
+        stage1_review_fn=fake_stage1_review,
+        stage3_review_fn=lambda _rows: set(),
+        suffix_risk_fn=lambda _exts: {
+            ".txt": {
+                "risk": "high_value",
+                "confidence": 0.9,
+                "reason": "User notes",
+            },
+            ".apache": {
+                "risk": "neutral",
+                "confidence": 0.0,
+                "reason": "LLM parse fallback",
+            },
+        },
+    )
+
+    by_ext = {row.ext: row for row in observed_rows}
+    assert by_ext[".txt"].label == "keep"
+    assert by_ext[".apache"].label == "drop"
+    assert "likely" in by_ext[".apache"].reason.lower()
 
 
 def test_run_backup_pipeline_passes_full_paths_to_path_risk_function(tmp_path) -> None:

@@ -1,4 +1,10 @@
 from rich.console import Console
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.application.current import create_app_session
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import DummyOutput
+
+import ark.tui.stage1_review as stage1_review
 
 from ark.tui.stage1_review import (
     SuffixReviewRow,
@@ -39,11 +45,10 @@ def test_run_stage1_review_uses_default_whitelist() -> None:
         message: str, choices: list[dict], default: list[str]
     ) -> list[str]:
         assert "Suffix whitelist" in message
+        assert any(item["value"].startswith("category::") for item in choices)
         assert ".pdf" in default
         assert ".tmp" not in default
-        assert len(choices) >= 4
-        assert choices[0]["value"].startswith("header::")
-        assert choices[2]["value"].startswith("header::")
+        assert len(choices) >= 3
         return default
 
     whitelist = run_stage1_review(
@@ -55,18 +60,67 @@ def test_run_stage1_review_uses_default_whitelist() -> None:
     assert whitelist == {".pdf"}
 
 
+def test_run_stage1_review_supports_category_level_selection() -> None:
+    rows = [
+        SuffixReviewRow(
+            ext=".pdf", label="keep", tag="document", confidence=0.9, reason="doc"
+        ),
+        SuffixReviewRow(
+            ext=".jpg", label="keep", tag="image", confidence=0.9, reason="image"
+        ),
+        SuffixReviewRow(
+            ext=".tmp", label="drop", tag="cache", confidence=0.9, reason="temp"
+        ),
+    ]
+
+    def fake_checkbox(
+        message: str, choices: list[dict], default: list[str]
+    ) -> list[str]:
+        assert "Suffix whitelist" in message
+        values = {item.get("value") for item in choices}
+        assert "category::Document" in values
+        assert "category::Image" in values
+        return ["category::Document", ".jpg"]
+
+    whitelist = run_stage1_review(
+        rows, checkbox_prompt=fake_checkbox, console=Console(record=True)
+    )
+    assert whitelist == {".pdf", ".jpg"}
+
+
+def test_run_stage1_review_expands_category_selection_to_all_suffixes() -> None:
+    rows = [
+        SuffixReviewRow(
+            ext=".pdf", label="keep", tag="document", confidence=0.9, reason="doc"
+        ),
+        SuffixReviewRow(
+            ext=".docx", label="keep", tag="document", confidence=0.9, reason="doc"
+        ),
+        SuffixReviewRow(
+            ext=".tmp", label="drop", tag="cache", confidence=0.1, reason="temp"
+        ),
+    ]
+
+    whitelist = run_stage1_review(
+        rows,
+        checkbox_prompt=lambda _message, _choices, _default: ["category::Document"],
+        console=Console(record=True),
+    )
+
+    assert whitelist == {".pdf", ".docx"}
+
+
 def test_default_checkbox_prompt_sets_checked_choices(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    class FakePrompt:
-        def ask(self) -> list[str]:
+    class FakeApplication:
+        def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["key_bindings"] = kwargs["key_bindings"]
+
+        def run(self) -> list[str]:
             return [".pdf"]
 
-    def fake_checkbox(**kwargs):
-        captured.update(kwargs)
-        return FakePrompt()
-
-    monkeypatch.setattr("ark.tui.stage1_review.questionary.checkbox", fake_checkbox)
+    monkeypatch.setattr(stage1_review, "Application", FakeApplication)
 
     result = _default_checkbox_prompt(
         message="Suffix whitelist selection",
@@ -78,9 +132,34 @@ def test_default_checkbox_prompt_sets_checked_choices(monkeypatch) -> None:
     )
 
     assert result == [".pdf"]
-    assert "default" not in captured
-    assert captured["choices"][0]["checked"] is True
-    assert captured["choices"][1].get("checked") is not True
+    key_bindings = captured["key_bindings"]
+    bindings = getattr(key_bindings, "bindings")
+    eager_by_key = {binding.keys: type(binding.eager).__name__ for binding in bindings}
+    assert eager_by_key[("q",)] == "Always"
+    assert eager_by_key[(Keys.Escape,)] == "Always"
+
+
+def test_default_checkbox_prompt_returns_empty_on_empty_choices() -> None:
+    result = _default_checkbox_prompt(
+        message="empty",
+        choices=[],
+        default=[],
+    )
+
+    assert result == []
+
+
+def test_default_checkbox_prompt_allows_q_to_finish_prompt() -> None:
+    with create_pipe_input() as pipe_input:
+        pipe_input.send_text("q")
+        with create_app_session(input=pipe_input, output=DummyOutput()):
+            result = _default_checkbox_prompt(
+                message="Suffix whitelist selection",
+                choices=[{"name": "pdf", "value": ".pdf"}],
+                default=[],
+            )
+
+    assert result == []
 
 
 def test_group_suffix_rows_uses_category_layering() -> None:

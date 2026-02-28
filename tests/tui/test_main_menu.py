@@ -233,6 +233,7 @@ def test_main_menu_can_run_llm_connectivity_check() -> None:
     )
 
     assert any("LLM connectivity test passed" in line for line in output)
+    assert any("ok" in line for line in output)
 
 
 def test_main_menu_can_accept_recommended_model_without_custom_override() -> None:

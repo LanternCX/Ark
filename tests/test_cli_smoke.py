@@ -133,7 +133,7 @@ def test_execute_backup_allows_restart_when_resumable_run_exists(monkeypatch) ->
 
     cli_module._execute_backup(
         config,
-        recovery_choice_prompt=lambda _msg, _choices: "Restart new",
+        recovery_choice_prompt=lambda _msg, _choices: "Start new run (keep old)",
     )
 
     assert observed["resume"] is False
@@ -176,10 +176,92 @@ def test_execute_backup_allows_discard_when_resumable_run_exists(monkeypatch) ->
 
     cli_module._execute_backup(
         config,
-        recovery_choice_prompt=lambda _msg, _choices: "Discard and restart",
+        recovery_choice_prompt=lambda _msg, _choices: "Discard old and start new",
     )
 
     assert observed["resume"] is False
     assert observed["run_id"] == "run-new"
     assert calls["created"] == 1
     assert ("run-old", "discarded") in calls["marked"]
+
+
+def test_execute_backup_uses_llm_dispatch_when_enabled(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run_backup_pipeline(**kwargs):
+        observed.update(kwargs)
+        return ["ok"]
+
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+    monkeypatch.setattr(
+        cli_module,
+        "llm_suffix_risk",
+        lambda exts, **_kwargs: {
+            ext: {"risk": "high_value", "confidence": 1.0, "reason": "ai"}
+            for ext in exts
+        },
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "llm_path_risk",
+        lambda paths, **_kwargs: {
+            path: {"risk": "neutral", "score": 0.5, "confidence": 1.0, "reason": "ai"}
+            for path in paths
+        },
+    )
+
+    config = PipelineConfig(
+        target="~/backup",
+        source_roots=["~/Code"],
+        dry_run=True,
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="openai/gpt-4.1-mini",
+        llm_api_key="sk-test",
+        ai_suffix_enabled=True,
+        ai_path_enabled=True,
+    )
+
+    cli_module._execute_backup(config)
+
+    suffix_result = observed["suffix_risk_fn"]([".pdf"])
+    path_result = observed["path_risk_fn"](["/tmp/a.txt"])
+    assert suffix_result[".pdf"]["reason"] == "ai"
+    assert path_result["/tmp/a.txt"]["reason"] == "ai"
+
+
+def test_execute_backup_falls_back_to_heuristic_when_llm_parse_fails(
+    monkeypatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run_backup_pipeline(**kwargs):
+        observed.update(kwargs)
+        return ["ok"]
+
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+    monkeypatch.setattr(
+        cli_module,
+        "llm_suffix_risk",
+        lambda exts, **_kwargs: {
+            ext: {"risk": "neutral", "confidence": 0.0, "reason": "LLM parse fallback"}
+            for ext in exts
+        },
+    )
+
+    config = PipelineConfig(
+        target="~/backup",
+        source_roots=["~/Code"],
+        dry_run=True,
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="openai/gpt-4.1-mini",
+        llm_api_key="sk-test",
+        ai_suffix_enabled=True,
+        ai_path_enabled=False,
+    )
+
+    cli_module._execute_backup(config)
+
+    suffix_result = observed["suffix_risk_fn"]([".pdf"])
+    assert suffix_result[".pdf"]["reason"] != "LLM parse fallback"

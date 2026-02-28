@@ -7,6 +7,11 @@ from typing import Callable
 import questionary
 import typer
 
+from ark.ai.decision_client import (
+    llm_directory_decision,
+    llm_path_risk,
+    llm_suffix_risk,
+)
 from ark.pipeline.config import PipelineConfig
 from ark.pipeline.run_backup import run_backup_pipeline
 from ark.runtime_logging import setup_runtime_logging
@@ -18,6 +23,10 @@ from ark.tui.stage3_review import PathReviewRow
 
 app = typer.Typer(help="Ark backup agent")
 logger = logging.getLogger("ark.cli")
+
+RECOVERY_RESUME = "Resume latest checkpoint"
+RECOVERY_RESTART = "Start new run (keep old)"
+RECOVERY_DISCARD = "Discard old and start new"
 
 
 @app.callback(invoke_without_command=True)
@@ -62,17 +71,17 @@ def _execute_backup(
         action = choice_fn(
             f"Found unfinished run {latest_run_id}. Recovery action:",
             [
-                "Resume latest",
-                "Restart new",
-                "Discard and restart",
+                RECOVERY_RESUME,
+                RECOVERY_RESTART,
+                RECOVERY_DISCARD,
             ],
         )
 
-        if action == "Resume latest":
+        if action == RECOVERY_RESUME:
             active_run_id = latest_run_id
             should_resume = True
             typer.echo(f"Resuming previous run: {active_run_id}")
-        elif action == "Discard and restart":
+        elif action == RECOVERY_DISCARD:
             run_store.mark_status(latest_run_id, "discarded")
             active_run_id = run_store.create_run(
                 target=target,
@@ -108,6 +117,57 @@ def _execute_backup(
             payload={"message": message},
         )
 
+    llm_kwargs = _llm_call_kwargs(config)
+
+    def suffix_risk_dispatch(exts: list[str]) -> dict[str, dict[str, object]]:
+        if not config.ai_suffix_enabled:
+            return {}
+        if not config.llm_enabled:
+            return _heuristic_suffix_risk(exts)
+        try:
+            progress_emit("[ai:remote] suffix classification")
+            result = llm_suffix_risk(exts, **llm_kwargs)
+            if _is_parse_fallback_result(result):
+                progress_emit("[ai:fallback] suffix local heuristic (parse fallback)")
+                return _heuristic_suffix_risk(exts)
+            return result
+        except Exception as exc:
+            progress_emit(f"[ai:fallback] suffix local heuristic ({exc})")
+            return _heuristic_suffix_risk(exts)
+
+    def path_risk_dispatch(paths: list[str]) -> dict[str, dict[str, object]]:
+        if not config.ai_path_enabled:
+            return {}
+        if not config.llm_enabled:
+            return _heuristic_path_risk(paths)
+        try:
+            progress_emit(f"[ai:remote] path classification batch={len(paths)}")
+            return llm_path_risk(paths, **llm_kwargs)
+        except Exception as exc:
+            progress_emit(f"[ai:fallback] path local heuristic ({exc})")
+            return _heuristic_path_risk(paths)
+
+    def directory_decision_dispatch(
+        directory: str, child_directories: list[str], sample_files: list[str]
+    ) -> dict[str, object]:
+        if not config.llm_enabled or not config.ai_path_enabled:
+            return {"decision": "not_sure", "confidence": 0.0, "reason": "disabled"}
+        try:
+            progress_emit(f"[ai:remote] dir={directory}")
+            return llm_directory_decision(
+                directory,
+                child_directories,
+                sample_files,
+                **llm_kwargs,
+            )
+        except Exception as exc:
+            progress_emit(f"[ai:fallback] dir not_sure ({exc})")
+            return {
+                "decision": "not_sure",
+                "confidence": 0.0,
+                "reason": "fallback",
+            }
+
     try:
         return run_backup_pipeline(
             target=target,
@@ -115,8 +175,9 @@ def _execute_backup(
             source_roots=source_roots,
             stage1_review_fn=stage1_review_fn,
             stage3_review_fn=stage3_review_fn,
-            suffix_risk_fn=_heuristic_suffix_risk if config.ai_suffix_enabled else None,
-            path_risk_fn=_heuristic_path_risk if config.ai_path_enabled else None,
+            suffix_risk_fn=suffix_risk_dispatch if config.ai_suffix_enabled else None,
+            path_risk_fn=path_risk_dispatch if config.ai_path_enabled else None,
+            directory_decision_fn=directory_decision_dispatch,
             send_full_path_to_ai=config.send_full_path_to_ai,
             ai_prune_mode=config.ai_prune_mode,
             progress_callback=progress_emit,
@@ -211,6 +272,29 @@ def _default_recovery_choice_prompt(message: str, choices: list[str]) -> str:
     except EOFError:
         return choices[0]
     return result or choices[0]
+
+
+def _llm_call_kwargs(config: PipelineConfig) -> dict[str, str]:
+    """Build shared kwargs for LLM decision calls."""
+    return {
+        "model": config.llm_model,
+        "provider": config.llm_provider,
+        "base_url": config.llm_base_url,
+        "api_key": config.llm_api_key,
+        "auth_method": config.llm_auth_method,
+        "google_client_id": config.google_client_id,
+        "google_client_secret": config.google_client_secret,
+        "google_refresh_token": config.google_refresh_token,
+    }
+
+
+def _is_parse_fallback_result(result: dict[str, dict[str, object]]) -> bool:
+    if not result:
+        return False
+    return all(
+        str(item.get("reason", "")).lower().startswith("llm parse fallback")
+        for item in result.values()
+    )
 
 
 def main() -> None:

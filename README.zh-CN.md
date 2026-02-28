@@ -93,13 +93,41 @@ Ark 会进入一级 TUI 菜单：
   - 作用：为兼容网关或本地服务覆盖 API 地址。
   - 后果：URL 错误会导致连接失败。
   - 建议：不需要自建网关时保持默认。
+- `Gemini authentication method`（仅 Gemini）
+  - 作用：选择 `api_key` 或 `google_oauth`。
+  - 后果：会改变必填凭据和校验规则。
+  - 建议：长期个人使用优先 OAuth；快速验证可先用 API key。
+- `Google client id` / `Google client secret`（仅 Gemini OAuth）
+  - 作用：配置 OAuth 客户端凭据，用于生成与刷新 token。
+  - 后果：配置错误会导致登录失败或运行期刷新失败。
+  - 建议：按 Desktop 应用方式创建并仅本地保存。
+- `Login with Google in browser now?`（仅 Gemini OAuth）
+  - 作用：立即拉起浏览器授权并写入 refresh token。
+  - 后果：跳过后若无 refresh token，执行阶段会被校验阻断。
+  - 建议：在设置阶段完成授权，避免执行时中断。
 - `LLM API key`
   - 作用：用于调用平台鉴权。
   - 后果：密钥错误会认证失败；密钥会保存到 `~/.ark/config.json`。
   - 建议：使用专用密钥并设置额度上限。
+- `Use AI suffix risk classification?`
+  - 作用：让 AI 后缀风险标签影响 Stage 1 默认后缀选择。
+  - 后果：关闭后仅使用本地启发式默认值。
+  - 建议：除非你需要纯本地确定性行为，否则保持开启。
+- `Use AI path pruning suggestions?`
+  - 作用：让 AI 路径评分影响 Stage 2/Stage 3 默认减枝。
+  - 后果：关闭后不会应用 AI 路径减枝信号。
+  - 建议：目录规模大时建议开启。
+- `Send full file paths to AI?`
+  - 作用：在最小元数据模式与完整路径模式之间切换。
+  - 后果：完整路径模式减枝效果更好，但会发送完整路径字符串。
+  - 建议：仅在你接受完整路径共享时开启。
+- `Hide low-value branches by default?`
+  - 作用：设置 Stage 3 初始减枝模式（`hide_low_value` 或 `show_all`）。
+  - 后果：仅影响初始可见性，运行中可随时切换。
+  - 建议：希望快速首轮筛选时建议开启。
 - `Test LLM connectivity now?`
-  - 作用：用当前 LLM 配置发送最小探测请求。
-  - 后果：可立即确认鉴权、模型和端点是否可用。
+  - 作用：用当前 LLM 配置发送 `hello` 探测请求。
+  - 后果：可立即确认鉴权、模型和端点是否可用，并打印模型返回消息。
   - 建议：修改 provider/model/key/OAuth 后都建议执行一次。
 
 ### 阶段 3：`Execute Backup`
@@ -109,6 +137,8 @@ Ark 会进入一级 TUI 菜单：
    - 后果：通过的后缀决定后续可进入分级的文件范围。
    - 建议：不确定时偏保守，避免过度过滤。
    - UI：后缀按类别分组展示（Document/Image/Code/Archive/Media/Executable/Temp/Cache/Other）。
+   - AI 模式：当启用 LLM 时，后缀 keep/drop/not_sure 默认值由远程 LLM 分类生成，失败时自动回退本地策略。
+   - 本地规则模式：扫描与后缀分类基线来自规则文件（`ark/rules/baseline.ignore`、`ark/rules/suffix_rules.toml`），不再在代码里写死列表。
 2. `Stage 2: Path Tiering`
    - 作用：结合本地信号和 AI 语义做路径分级。
    - 后果：分级结果影响最终候选优先级。
@@ -117,6 +147,7 @@ Ark 会进入一级 TUI 菜单：
    - 作用：最终确认并执行复制。
    - 后果：当 `Dry run=False` 时会实际写入备份文件。
    - 建议：先在树形分页视图中完成目录级决策，再确认选中数量。
+   - 控制：`Enter` 展开/进入目录，`Space` 切换选中。
 
 ### Stage 3 树形复核
 
@@ -128,6 +159,10 @@ Ark 会进入一级 TUI 菜单：
 - 勾选目录会递归作用于全部子孙节点。
 - 低价值分支可默认隐藏以降低噪音，并可在同一轮复核中随时切换显示。
 - 交互以图案为主：`●`/`◐`/`○` 与 `▸`/`▾`，并配合 rich 颜色树视图。
+- 每个目录只渲染一行，不再出现同目录双行的展开/勾选项。
+- AI DFS 模式：当启用 LLM 路径决策时，Stage 3 会先按目录串行 DFS 生成 `keep/drop/not_sure` 决策。
+- 在 DFS 模式下，`drop` 会递归取消整个子树，但遍历仍会继续到整棵树跑完。
+- DFS 完成后先显示 AI 汇总，再进入一次最终人工确认。
 
 ### 可恢复执行
 
@@ -146,6 +181,13 @@ Ark 会进入一级 TUI 菜单：
   - 当前文件复制进度
 - 运行日志写入 `~/.ark/logs/ark.log`（轮转文件）。
 - 每次运行的结构化事件写入 `~/.ark/state/backup_runs/<run_id>.events.jsonl`。
+- LiteLLM 依赖日志会做噪音过滤，控制台优先保留有效告警信息。
+
+### 规则文件
+
+- `ark/rules/baseline.ignore`：扫描阶段使用的开源风格 gitignore 基线规则。
+- `ark/rules/suffix_rules.toml`：Stage 1 使用的后缀分类与 hard-drop/keep 默认规则。
+- 每个 source root 下的 `.gitignore` 与可选 `.arkignore` 会在扫描时与基线规则合并。
 
 ### 首次使用建议流程
 

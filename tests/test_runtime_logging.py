@@ -18,3 +18,15 @@ def test_setup_runtime_logging_creates_rotating_log_file(
     logging.getLogger("ark.test").info("hello-log")
 
     assert (tmp_path / "ark.log").exists()
+
+
+def test_adopt_dependency_loggers_aligns_litellm_loggers() -> None:
+    parent = logging.getLogger("LiteLLM")
+    child = logging.getLogger("LiteLLM.http_handler")
+    parent.setLevel(logging.DEBUG)
+    child.setLevel(logging.DEBUG)
+
+    runtime_logging.adopt_dependency_loggers(("LiteLLM",), level=logging.WARNING)
+
+    assert parent.level == logging.WARNING
+    assert child.level == logging.WARNING

@@ -30,16 +30,18 @@ Ark enforces one-way dependencies:
 
 ## 3. Configuration Model
 
-`PipelineConfig` contains two groups:
+`PipelineConfig` contains three groups:
 
 - Backup execution fields (`target`, `source_roots`, `dry_run`, `non_interactive`).
-- LLM fields (`llm_enabled`, provider/model/base URL/auth credentials).
+- LLM routing fields (`llm_enabled`, `llm_provider_group`, `llm_provider`, `llm_model`, `llm_base_url`, `llm_api_key`, `llm_auth_method`, `google_client_id`, `google_client_secret`, `google_refresh_token`).
+- AI decision fields (`ai_suffix_enabled`, `ai_path_enabled`, `send_full_path_to_ai`, `ai_prune_mode`).
 
 Validation rules run before execution. Typical blockers:
 
 - Missing target/source roots.
 - LLM enabled without provider/model.
 - Gemini OAuth selected without client id/client secret/refresh token.
+- Invalid prune mode outside `hide_low_value` / `show_all`.
 
 ## 4. AI Routing Strategy
 
@@ -53,22 +55,25 @@ AI classification scopes:
 
 - Suffix risk recommendation can influence stage-1 default whitelist.
 - Path risk recommendation can influence stage-2 reasons and stage-3 low-value pruning defaults.
+- Stage-3 can run serial AI directory DFS decisions (`keep/drop/not_sure`) before final interactive confirmation.
 - Full path payloads are supported when configured; no file content is sent.
+- Scan pruning and suffix category defaults are loaded from external rule files, then fused with AI decisions.
 
 ## 5. Runtime Checkpoint And Logging
 
 - Pipeline supports resumable runs with stage checkpoints (`scan`, `stage1`, `stage2`, `review`, `copy`).
 - Interruptions can be resumed using persisted run metadata and checkpoint payloads.
 - Runtime logging uses rich console output + rotating file logs.
+- LiteLLM dependency loggers are aligned and filtered to warning-level noise floor.
 - Per-run structured events are appended to JSONL for operational replay.
 
-## 5. Testing Contract
+## 6. Testing Contract
 
 - Add tests before behavior changes (TDD).
 - Keep tests under mirrored `tests/` paths.
 - Run focused tests first, then full `pytest`.
 
-## 6. Documentation Contract
+## 7. Documentation Contract
 
 - User docs must remain bilingual in README (`README.md`, `README.zh-CN.md`).
 - Developer docs in `docs/` should avoid repeating skill governance content.

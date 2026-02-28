@@ -1,14 +1,23 @@
 """Run backup pipeline orchestration."""
 
+import os
 from pathlib import Path
 from typing import Callable
 
 from ark.backup.executor import mirror_copy_one
 from ark.decision.tiering import classify_tier
+from ark.rules.local_rules import (
+    build_scan_pathspec,
+    hard_drop_suffixes,
+    keep_suffixes,
+    should_ignore_relpath,
+)
 from ark.state.backup_run_store import BackupRunStore
 from ark.signals.extractor import extension_score
 from ark.tui.stage1_review import SuffixReviewRow, run_stage1_review
 from ark.tui.stage3_review import PathReviewRow, run_stage3_review
+
+HARD_DROP_SUFFIXES = hard_drop_suffixes()
 
 
 def run_backup_pipeline(
@@ -19,6 +28,9 @@ def run_backup_pipeline(
     stage3_review_fn: Callable[[list[PathReviewRow]], set[str]] | None = None,
     suffix_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
     path_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
+    directory_decision_fn: (
+        Callable[[str, list[str], list[str]], dict[str, object]] | None
+    ) = None,
     send_full_path_to_ai: bool = False,
     ai_prune_mode: str = "hide_low_value",
     progress_callback: Callable[[str], None] | None = None,
@@ -110,6 +122,7 @@ def run_backup_pipeline(
             hide_low_value_default=(ai_prune_mode == "hide_low_value"),
             resume_state=resume_state.get("review") if resume else None,
             checkpoint_callback=lambda payload: checkpoint("review", payload),
+            ai_directory_decision_fn=directory_decision_fn,
         )
     checkpoint("review", {"selected_paths": sorted(selected_paths)})
     progress(f"[review] selected={len(selected_paths)}")
@@ -222,30 +235,43 @@ def _collect_files_by_root(
         if not root.exists() or not root.is_dir():
             continue
         progress(f"[scan] scanning root={root}")
+        spec = build_scan_pathspec(root)
         files = []
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
-            text = str(path)
-            if text in resumed_seen:
-                continue
-            files.append(path)
-            discovered += 1
-            if discovered % 200 == 0:
-                progress(f"[scan] discovered={discovered} current={path.parent}")
-                if checkpoint_callback:
-                    merged = {
-                        str(item_root): [str(item) for item in items]
-                        for item_root, items in files_by_root.items()
-                    }
-                    merged.setdefault(str(root), [])
-                    merged[str(root)].extend(str(item) for item in files)
-                    checkpoint_callback(
-                        {
-                            "files_by_root": merged,
-                            "scan_complete": False,
+        for current, dir_names, file_names in os.walk(root, topdown=True):
+            base = Path(current)
+            base_rel = str(base.relative_to(root)) if base != root else ""
+            kept_dirs: list[str] = []
+            for name in dir_names:
+                rel = f"{base_rel}/{name}" if base_rel else name
+                if not should_ignore_relpath(spec, rel, is_dir=True):
+                    kept_dirs.append(name)
+            dir_names[:] = kept_dirs
+
+            for file_name in file_names:
+                path = base / file_name
+                rel_file = str(path.relative_to(root))
+                if should_ignore_relpath(spec, rel_file, is_dir=False):
+                    continue
+                text = str(path)
+                if text in resumed_seen:
+                    continue
+                files.append(path)
+                discovered += 1
+                if discovered % 200 == 0:
+                    progress(f"[scan] discovered={discovered} current={path.parent}")
+                    if checkpoint_callback:
+                        merged = {
+                            str(item_root): [str(item) for item in items]
+                            for item_root, items in files_by_root.items()
                         }
-                    )
+                        merged.setdefault(str(root), [])
+                        merged[str(root)].extend(str(item) for item in files)
+                        checkpoint_callback(
+                            {
+                                "files_by_root": merged,
+                                "scan_complete": False,
+                            }
+                        )
         files_by_root[root] = sorted(files, key=lambda item: str(item))
 
     if checkpoint_callback:
@@ -280,11 +306,36 @@ def _build_stage1_rows(
         return _sample_suffix_rows() if use_sample_rows else []
 
     rows: list[SuffixReviewRow] = []
-    risk_overrides = (
-        suffix_risk_fn(sorted(discovered_extensions)) if suffix_risk_fn else {}
+    ai_candidate_exts = sorted(
+        ext for ext in discovered_extensions if ext not in HARD_DROP_SUFFIXES
     )
+    risk_overrides = suffix_risk_fn(ai_candidate_exts) if suffix_risk_fn else {}
     for ext in sorted(discovered_extensions):
-        label, tag, confidence, reason = _stage1_heuristic(ext)
+        if ext in HARD_DROP_SUFFIXES:
+            rows.append(
+                SuffixReviewRow(
+                    ext=ext,
+                    label="drop",
+                    tag="hard-drop-rule",
+                    confidence=0.99,
+                    reason="Hard drop rule: temporary/generated suffix",
+                )
+            )
+            continue
+
+        if suffix_risk_fn:
+            label, tag, confidence, reason = (
+                "keep",
+                "ai-pending",
+                0.50,
+                "AI-driven suffix selection (default keep)",
+            )
+            override = risk_overrides.get(ext, {})
+            override_reason = str(override.get("reason", "")).lower()
+            if override_reason.startswith("llm parse fallback"):
+                label, tag, confidence, reason = _stage1_heuristic(ext)
+        else:
+            label, tag, confidence, reason = _stage1_heuristic(ext)
         label, tag, confidence, reason = _apply_suffix_risk_override(
             ext,
             label,
@@ -306,20 +357,7 @@ def _build_stage1_rows(
 
 
 def _stage1_heuristic(ext: str) -> tuple[str, str, float, str]:
-    keep_exts = {
-        ".pdf",
-        ".doc",
-        ".docx",
-        ".xls",
-        ".xlsx",
-        ".ppt",
-        ".pptx",
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".md",
-        ".txt",
-    }
+    keep_exts = keep_suffixes()
     if ext in keep_exts:
         return ("keep", "likely-user-data", 0.85, "Likely user-created content")
     return ("drop", "likely-generated", 0.70, "Likely generated or low-value artifact")
@@ -427,6 +465,8 @@ def _apply_suffix_risk_override(
     risk = str(override.get("risk", "neutral"))
     overridden_confidence = float(override.get("confidence", confidence))
     overridden_reason = str(override.get("reason", reason))
+    if overridden_reason.lower().startswith("llm parse fallback"):
+        return label, tag, confidence, reason
 
     if risk == "high_value":
         return "keep", "ai-high-value", overridden_confidence, overridden_reason

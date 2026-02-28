@@ -279,7 +279,7 @@ def _run_llm_settings(
     if should_test_connectivity:
         ok, message = llm_connectivity_check(config)
         if ok:
-            echo("LLM connectivity test passed.")
+            echo(f"LLM connectivity test passed: {message}")
         else:
             echo(f"LLM connectivity test failed: {message}")
 

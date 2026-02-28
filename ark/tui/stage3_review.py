@@ -1,9 +1,16 @@
 """Stage 3 final review helpers."""
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable
 
 import questionary
+from prompt_toolkit.application import Application
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout import Layout
+from prompt_toolkit.layout.containers import HSplit, Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.widgets import RadioList
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -11,6 +18,11 @@ from rich.text import Text
 from rich.tree import Tree
 
 from ark.tui.tree_selection import SelectionState, TreeSelectionState, paginate_items
+
+_TREE_ACTION_HINT = (
+    "Enter=select(open/toggle/control), Right=open, Space=toggle, "
+    "Left/b/h=up, n/p=page, a/f=filter, q/esc=done"
+)
 
 
 @dataclass(frozen=True)
@@ -62,6 +74,9 @@ def run_stage3_review(
     hide_low_value_default: bool = True,
     resume_state: dict | None = None,
     checkpoint_callback: Callable[[dict], None] | None = None,
+    ai_directory_decision_fn: (
+        Callable[[str, list[str], list[str]], dict[str, object]] | None
+    ) = None,
 ) -> set[str]:
     """Run final TUI review for backup path selection."""
     filtered_rows = [row for row in rows if row.tier in {"tier1", "tier2"}]
@@ -80,6 +95,7 @@ def run_stage3_review(
             resume_state=resume_state,
             checkpoint_callback=checkpoint_callback,
             console=ui,
+            ai_directory_decision_fn=ai_directory_decision_fn,
         )
 
     confirm_fn = confirm_prompt or _default_confirm_prompt
@@ -119,6 +135,8 @@ def _run_tree_mode(
     resume_state: dict | None,
     checkpoint_callback: Callable[[dict], None] | None,
     console: Console,
+    ai_directory_decision_fn: Callable[[str, list[str], list[str]], dict[str, object]]
+    | None,
 ) -> set[str]:
     """Run tree-based paginated decision flow."""
     defaults = {row.path for row in filtered_rows if row.tier == "tier1"}
@@ -126,6 +144,17 @@ def _run_tree_mode(
         defaults = {str(path) for path in resume_state.get("selected_paths", [])}
     low_value_files = {row.path for row in filtered_rows if row.ai_risk == "low_value"}
     candidates = [row.path for row in filtered_rows]
+
+    if ai_directory_decision_fn and not (
+        resume_state and resume_state.get("selected_paths")
+    ):
+        defaults, ai_decisions = _apply_ai_directory_decisions(
+            candidates,
+            defaults,
+            ai_directory_decision_fn,
+        )
+        _render_ai_dfs_summary(console, ai_decisions)
+
     state = TreeSelectionState.from_paths(candidates, selected_files=defaults)
 
     current_dir = str(resume_state.get("current_dir", "")) if resume_state else ""
@@ -165,43 +194,35 @@ def _run_tree_mode(
 
         choices: list[dict] = []
         if current_dir:
-            choices.append({"name": "↩ ..", "value": "up"})
-        if page_index > 0:
-            choices.append({"name": "◀", "value": "prev"})
-        if page_index < total_pages - 1:
-            choices.append({"name": "▶", "value": "next"})
-
+            choices.append(
+                {
+                    "name": "↩ ..",
+                    "value": "control::up",
+                }
+            )
         for node in page_items:
             marker = _marker_for(state.selection_state(node))
             name = _display_name(node)
             if state.is_dir(node):
                 choices.append(
                     {
-                        "name": f"{marker} 📁 {name}/",
-                        "value": f"toggle::{node}",
-                    }
-                )
-                choices.append(
-                    {
-                        "name": f"▸ 📁 {name}/",
-                        "value": f"enter::{node}",
+                        "name": f"▸ {marker} 📁 {name}/",
+                        "value": f"node::{node}",
                     }
                 )
             else:
                 choices.append(
                     {
                         "name": f"{marker} 📄 {name}",
-                        "value": f"toggle::{node}",
+                        "value": f"node::{node}",
                     }
                 )
-
         choices.append(
             {
-                "name": ("A: all" if not show_low_value else "F: filtered"),
-                "value": "toggle_low_value",
+                "name": "✓ Done and continue",
+                "value": "control::done",
             }
         )
-        choices.append({"name": "✓", "value": "done"})
 
         message = f"dir={current_dir or '/'}  page={page_index + 1}/{total_pages}  hidden={hidden_count}"
         try:
@@ -216,9 +237,9 @@ def _run_tree_mode(
             )
             raise
 
-        if action == "done":
+        if action in {"done", "control::done"}:
             break
-        if action == "up":
+        if action in {"up", "control::up"}:
             current_dir = state.parent_by_path.get(current_dir, "")
             page_index = 0
             _checkpoint_tree_state(
@@ -260,6 +281,40 @@ def _run_tree_mode(
                 checkpoint_callback=checkpoint_callback,
             )
             continue
+        if action == "show_all":
+            show_low_value = True
+            page_index = 0
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
+            continue
+        if action == "show_filtered":
+            show_low_value = False
+            page_index = 0
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
+            continue
+        if action.startswith("space::"):
+            selected_value = action.split("::", 1)[1]
+            if selected_value.startswith("node::"):
+                state.toggle(selected_value.split("::", 1)[1])
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
+            continue
         if action.startswith("toggle::"):
             state.toggle(action.split("::", 1)[1])
             _checkpoint_tree_state(
@@ -271,7 +326,43 @@ def _run_tree_mode(
             )
             continue
         if action.startswith("enter::"):
-            current_dir = action.split("::", 1)[1]
+            selected_value = action.split("::", 1)[1]
+            if selected_value == "control::done":
+                break
+            if selected_value == "control::up":
+                current_dir = state.parent_by_path.get(current_dir, "")
+                page_index = 0
+                _checkpoint_tree_state(
+                    state=state,
+                    current_dir=current_dir,
+                    page_index=page_index,
+                    show_low_value=show_low_value,
+                    checkpoint_callback=checkpoint_callback,
+                )
+                continue
+            if selected_value.startswith("node::"):
+                node = selected_value.split("::", 1)[1]
+                if state.is_dir(node):
+                    current_dir = node
+                else:
+                    state.toggle(node)
+            else:
+                current_dir = selected_value
+            page_index = 0
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
+            continue
+        if action.startswith("node::"):
+            node = action.split("::", 1)[1]
+            if state.is_dir(node):
+                current_dir = node
+            else:
+                state.toggle(node)
             page_index = 0
             _checkpoint_tree_state(
                 state=state,
@@ -331,9 +422,80 @@ def _default_checkbox_prompt(
 
 
 def _default_action_prompt(message: str, choices: list[dict]) -> str:
-    """Default tree action prompt using questionary select."""
-    result = questionary.select(message=message, choices=choices).ask()
+    """Prompt with Enter-expand and Space-toggle semantics."""
+    values = [(item["value"], item["name"]) for item in choices]
+    radio = RadioList(values)
+
+    kb = KeyBindings()
+
+    @kb.add("enter", eager=True)
+    @kb.add("c-m", eager=True)
+    def _on_enter(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result=f"enter::{_radio_cursor_value(radio, values)}")
+
+    @kb.add(" ", eager=True)
+    def _on_space(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result=f"space::{_radio_cursor_value(radio, values)}")
+
+    @kb.add("right", eager=True)
+    def _on_right(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result=f"enter::{_radio_cursor_value(radio, values)}")
+
+    @kb.add("left", eager=True)
+    def _on_left(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result="up")
+
+    @kb.add("b", eager=True)
+    @kb.add("h", eager=True)
+    def _on_up_alias(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result="up")
+
+    @kb.add("n", eager=True)
+    def _on_next(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result="next")
+
+    @kb.add("p", eager=True)
+    def _on_prev(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result="prev")
+
+    @kb.add("a", eager=True)
+    def _on_all(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result="show_all")
+
+    @kb.add("f", eager=True)
+    def _on_filtered(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result="show_filtered")
+
+    @kb.add("q", eager=True)
+    @kb.add("escape", eager=True)
+    def _on_done(event) -> None:  # type: ignore[no-untyped-def]
+        event.app.exit(result="done")
+
+    root = HSplit(
+        [
+            Window(content=FormattedTextControl(text=message), height=1),
+            Window(height=1, char="-"),
+            radio,
+            Window(
+                content=FormattedTextControl(text=_TREE_ACTION_HINT),
+                height=1,
+            ),
+        ]
+    )
+    app = Application(
+        layout=Layout(root, focused_element=radio),
+        key_bindings=kb,
+        full_screen=False,
+    )
+    result = app.run()
     return result or "done"
+
+
+def _radio_cursor_value(radio: RadioList, values: list[tuple[str, str]]) -> str:
+    """Return highlighted value instead of checked value."""
+    index = int(getattr(radio, "_selected_index", 0))
+    index = max(0, min(index, len(values) - 1))
+    return values[index][0]
 
 
 def _default_confirm_prompt(message: str, default: bool) -> bool:
@@ -433,3 +595,82 @@ def _render_tree_snapshot(
     console.print(
         Panel(tree, border_style="blue", title="Directory Tree", subtitle=footer)
     )
+
+
+def _apply_ai_directory_decisions(
+    candidates: list[str],
+    defaults: set[str],
+    ai_directory_decision_fn: Callable[[str, list[str], list[str]], dict[str, object]],
+) -> tuple[set[str], list[dict[str, object]]]:
+    state = TreeSelectionState.from_paths(candidates, selected_files=defaults)
+    selected = set(defaults)
+    decisions: list[dict[str, object]] = []
+
+    current_level = [item for item in state.children("") if state.is_dir(item)]
+    while current_level:
+        sorted_level = sorted(current_level)
+        payload_by_directory: dict[str, dict[str, object]] = {}
+
+        with ThreadPoolExecutor(max_workers=max(1, len(sorted_level))) as executor:
+            future_by_directory = {
+                directory: executor.submit(
+                    ai_directory_decision_fn,
+                    directory,
+                    [item for item in state.children(directory) if state.is_dir(item)],
+                    sorted(state.descendant_files(directory))[:8],
+                )
+                for directory in sorted_level
+            }
+            for directory in sorted_level:
+                payload_by_directory[directory] = future_by_directory[
+                    directory
+                ].result()
+
+        next_level: list[str] = []
+        for directory in sorted_level:
+            child_dirs = [
+                item for item in state.children(directory) if state.is_dir(item)
+            ]
+            payload = payload_by_directory[directory]
+            decision = str(payload.get("decision", "not_sure")).lower()
+            descendants = state.descendant_files(directory)
+
+            if decision == "keep":
+                selected.update(descendants)
+            elif decision == "drop":
+                selected.difference_update(descendants)
+            else:
+                decision = "not_sure"
+
+            decisions.append(
+                {
+                    "directory": directory,
+                    "decision": decision,
+                    "confidence": float(payload.get("confidence", 0.0)),
+                    "reason": str(payload.get("reason", "")),
+                }
+            )
+            next_level.extend(child_dirs)
+
+        current_level = next_level
+
+    return selected, decisions
+
+
+def _render_ai_dfs_summary(
+    console: Console, decisions: list[dict[str, object]]
+) -> None:
+    if not decisions:
+        return
+    keep = len([item for item in decisions if item["decision"] == "keep"])
+    drop = len([item for item in decisions if item["decision"] == "drop"])
+    unsure = len([item for item in decisions if item["decision"] == "not_sure"])
+    text = Text()
+    text.append("AI DFS pass completed", style="bold cyan")
+    text.append("  ")
+    text.append(f"keep={keep}", style="green")
+    text.append("  ")
+    text.append(f"drop={drop}", style="red")
+    text.append("  ")
+    text.append(f"not_sure={unsure}", style="yellow")
+    console.print(Panel(text, border_style="magenta"))
