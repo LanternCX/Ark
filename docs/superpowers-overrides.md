@@ -10,3 +10,7 @@ This repository defines project-level overrides on top of the installed superpow
 4. Enforce Git Flow branch model (`main`, `dev`, `feat/*`, `feature/*`).
 5. Use `questionary + rich` for TUI components.
 6. Use `litellm` as the LLM routing layer.
+7. Apply project-local skills under `skills/`:
+   - `skills/code-standard/SKILL.md`
+   - `skills/doc-maintainer/SKILL.md`
+   - `skills/git-workflow/SKILL.md`
