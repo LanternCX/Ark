@@ -57,3 +57,129 @@ def test_execute_backup_expands_user_paths(monkeypatch) -> None:
     assert observed["ai_prune_mode"] == "show_all"
     assert observed["suffix_risk_fn"] is None
     assert callable(observed["path_risk_fn"])
+
+
+def test_execute_backup_resumes_latest_matching_run(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class FakeStore:
+        def __init__(self, _path):
+            pass
+
+        def find_latest_resumable(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return {"run_id": "run-123", "status": "paused", "state": {}}
+
+        def create_run(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return "run-new"
+
+        def append_event(self, run_id, stage, event, payload):
+            del run_id, stage, event, payload
+
+        def mark_status(self, run_id, status):
+            del run_id, status
+
+    def fake_run_backup_pipeline(**kwargs):
+        observed.update(kwargs)
+        return ["ok"]
+
+    monkeypatch.setattr(cli_module, "BackupRunStore", FakeStore)
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+
+    config = PipelineConfig(
+        target="~/backup",
+        source_roots=["~/Code"],
+        dry_run=True,
+    )
+
+    cli_module._execute_backup(config)
+
+    assert observed["resume"] is True
+    assert observed["run_id"] == "run-123"
+
+
+def test_execute_backup_allows_restart_when_resumable_run_exists(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+    calls: dict[str, object] = {"created": 0, "marked": []}
+
+    class FakeStore:
+        def __init__(self, _path):
+            pass
+
+        def find_latest_resumable(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return {"run_id": "run-old", "status": "paused", "state": {}}
+
+        def create_run(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            calls["created"] = int(calls["created"]) + 1
+            return "run-new"
+
+        def append_event(self, run_id, stage, event, payload):
+            del run_id, stage, event, payload
+
+        def mark_status(self, run_id, status):
+            calls["marked"].append((run_id, status))
+
+    def fake_run_backup_pipeline(**kwargs):
+        observed.update(kwargs)
+        return ["ok"]
+
+    monkeypatch.setattr(cli_module, "BackupRunStore", FakeStore)
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+
+    config = PipelineConfig(target="~/backup", source_roots=["~/Code"], dry_run=True)
+
+    cli_module._execute_backup(
+        config,
+        recovery_choice_prompt=lambda _msg, _choices: "Restart new",
+    )
+
+    assert observed["resume"] is False
+    assert observed["run_id"] == "run-new"
+    assert calls["created"] == 1
+    assert calls["marked"] == []
+
+
+def test_execute_backup_allows_discard_when_resumable_run_exists(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+    calls: dict[str, object] = {"created": 0, "marked": []}
+
+    class FakeStore:
+        def __init__(self, _path):
+            pass
+
+        def find_latest_resumable(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return {"run_id": "run-old", "status": "paused", "state": {}}
+
+        def create_run(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            calls["created"] = int(calls["created"]) + 1
+            return "run-new"
+
+        def append_event(self, run_id, stage, event, payload):
+            del run_id, stage, event, payload
+
+        def mark_status(self, run_id, status):
+            calls["marked"].append((run_id, status))
+
+    def fake_run_backup_pipeline(**kwargs):
+        observed.update(kwargs)
+        return ["ok"]
+
+    monkeypatch.setattr(cli_module, "BackupRunStore", FakeStore)
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+
+    config = PipelineConfig(target="~/backup", source_roots=["~/Code"], dry_run=True)
+
+    cli_module._execute_backup(
+        config,
+        recovery_choice_prompt=lambda _msg, _choices: "Discard and restart",
+    )
+
+    assert observed["resume"] is False
+    assert observed["run_id"] == "run-new"
+    assert calls["created"] == 1
+    assert ("run-old", "discarded") in calls["marked"]

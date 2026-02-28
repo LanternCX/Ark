@@ -57,6 +57,8 @@ def run_stage3_review(
     console: Console | None = None,
     page_size: int = 20,
     hide_low_value_default: bool = True,
+    resume_state: dict | None = None,
+    checkpoint_callback: Callable[[dict], None] | None = None,
 ) -> set[str]:
     """Run final TUI review for backup path selection."""
     filtered_rows = [row for row in rows if row.tier in {"tier1", "tier2"}]
@@ -71,6 +73,8 @@ def run_stage3_review(
             action_fn,
             page_size=page_size,
             hide_low_value_default=hide_low_value_default,
+            resume_state=resume_state,
+            checkpoint_callback=checkpoint_callback,
         )
 
     confirm_fn = confirm_prompt or _default_confirm_prompt
@@ -107,16 +111,24 @@ def _run_tree_mode(
     action_prompt: Callable[[str, list[dict]], str],
     page_size: int,
     hide_low_value_default: bool,
+    resume_state: dict | None,
+    checkpoint_callback: Callable[[dict], None] | None,
 ) -> set[str]:
     """Run tree-based paginated decision flow."""
     defaults = {row.path for row in filtered_rows if row.tier == "tier1"}
+    if resume_state and resume_state.get("selected_paths"):
+        defaults = {str(path) for path in resume_state.get("selected_paths", [])}
     low_value_files = {row.path for row in filtered_rows if row.ai_risk == "low_value"}
     candidates = [row.path for row in filtered_rows]
     state = TreeSelectionState.from_paths(candidates, selected_files=defaults)
 
-    current_dir = ""
-    page_index = 0
-    show_low_value = not hide_low_value_default
+    current_dir = str(resume_state.get("current_dir", "")) if resume_state else ""
+    page_index = int(resume_state.get("page_index", 0)) if resume_state else 0
+    show_low_value = (
+        bool(resume_state.get("show_low_value", not hide_low_value_default))
+        if resume_state
+        else not hide_low_value_default
+    )
 
     while True:
         nodes = state.children(current_dir)
@@ -182,33 +194,112 @@ def _run_tree_mode(
             f"Stage 3 Tree Review | dir={current_dir or '/'} | "
             f"page={page_index + 1}/{total_pages} | hidden={hidden_count}"
         )
-        action = action_prompt(message, choices)
+        try:
+            action = action_prompt(message, choices)
+        except KeyboardInterrupt:
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
+            raise
 
         if action == "done":
             break
         if action == "up":
             current_dir = state.parent_by_path.get(current_dir, "")
             page_index = 0
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
             continue
         if action == "next":
             page_index += 1
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
             continue
         if action == "prev":
             page_index -= 1
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
             continue
         if action == "toggle_low_value":
             show_low_value = not show_low_value
             page_index = 0
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
             continue
         if action.startswith("toggle::"):
             state.toggle(action.split("::", 1)[1])
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
             continue
         if action.startswith("enter::"):
             current_dir = action.split("::", 1)[1]
             page_index = 0
+            _checkpoint_tree_state(
+                state=state,
+                current_dir=current_dir,
+                page_index=page_index,
+                show_low_value=show_low_value,
+                checkpoint_callback=checkpoint_callback,
+            )
             continue
 
+        _checkpoint_tree_state(
+            state=state,
+            current_dir=current_dir,
+            page_index=page_index,
+            show_low_value=show_low_value,
+            checkpoint_callback=checkpoint_callback,
+        )
+
     return state.selected_files & set(candidates)
+
+
+def _checkpoint_tree_state(
+    state: TreeSelectionState,
+    current_dir: str,
+    page_index: int,
+    show_low_value: bool,
+    checkpoint_callback: Callable[[dict], None] | None,
+) -> None:
+    if checkpoint_callback is None:
+        return
+    checkpoint_callback(
+        {
+            "selected_paths": sorted(state.selected_files),
+            "current_dir": current_dir,
+            "page_index": page_index,
+            "show_low_value": show_low_value,
+        }
+    )
 
 
 def _default_checkbox_prompt(

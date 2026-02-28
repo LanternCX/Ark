@@ -117,7 +117,7 @@ This section explains each TUI stage in user terms: what it does, what happens i
    - Consequence: with `Dry run=False`, this produces real copied files.
    - Recommendation: use tree paging to review folder-level decisions first, then confirm selected count.
 
-### Stage 3 Tree Review (New)
+### Stage 3 Tree Review
 
 - Final selection uses a paginated tree view instead of a flat one-line path list.
 - Folder nodes support tri-state selection:
@@ -126,6 +126,24 @@ This section explains each TUI stage in user terms: what it does, what happens i
   - `unchecked`: no descendants selected
 - Toggling a folder applies recursively to all descendants.
 - Low-value branches can be hidden by default to reduce noise and can be shown again in the same review session.
+
+### Resumable Execution
+
+- Backup runs now save checkpoints under `~/.ark/state/backup_runs/`.
+- If a matching unfinished run exists, Ark provides a recovery menu:
+  - `Resume latest`
+  - `Restart new`
+  - `Discard and restart`
+- Checkpoints include scan progress, AI pruning progress, stage-3 tree selection state, and copy progress.
+
+### Runtime Progress And Logs
+
+- During execution, Ark emits live progress hints such as:
+  - current scan root/directory
+  - current AI batch processing status
+  - current file copy progress
+- Runtime logs are written to `~/.ark/logs/ark.log` with rotating log files.
+- Per-run structured events are stored as JSONL in `~/.ark/state/backup_runs/<run_id>.events.jsonl`.
 
 ### Suggested First-Run Flow
 

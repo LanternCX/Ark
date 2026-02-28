@@ -25,6 +25,7 @@ Ark enforces one-way dependencies:
 5. Stage 1/2/3 decisions produce final selected paths.
 6. Stage 3 uses paginated tree navigation with tri-state folder selection.
 7. `backup.executor` mirrors selected files unless dry run.
+8. Runtime checkpoints persist resumable progress under `~/.ark/state/backup_runs`.
 
 ## 3. Configuration Model
 
@@ -52,6 +53,13 @@ AI classification scopes:
 - Suffix risk recommendation can influence stage-1 default whitelist.
 - Path risk recommendation can influence stage-2 reasons and stage-3 low-value pruning defaults.
 - Full path payloads are supported when configured; no file content is sent.
+
+## 5. Runtime Checkpoint And Logging
+
+- Pipeline supports resumable runs with stage checkpoints (`scan`, `stage1`, `stage2`, `review`, `copy`).
+- Interruptions can be resumed using persisted run metadata and checkpoint payloads.
+- Runtime logging uses rich console output + rotating file logs.
+- Per-run structured events are appended to JSONL for operational replay.
 
 ## 5. Testing Contract
 

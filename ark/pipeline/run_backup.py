@@ -5,6 +5,7 @@ from typing import Callable
 
 from ark.backup.executor import mirror_copy_one
 from ark.decision.tiering import classify_tier
+from ark.state.backup_run_store import BackupRunStore
 from ark.signals.extractor import extension_score
 from ark.tui.stage1_review import SuffixReviewRow, run_stage1_review
 from ark.tui.stage3_review import PathReviewRow, run_stage3_review
@@ -20,15 +21,52 @@ def run_backup_pipeline(
     path_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
     send_full_path_to_ai: bool = False,
     ai_prune_mode: str = "hide_low_value",
+    progress_callback: Callable[[str], None] | None = None,
+    run_store: BackupRunStore | None = None,
+    run_id: str | None = None,
+    resume: bool = False,
 ) -> list[str]:
     """Run staged review flow and return progress logs."""
-    files_by_root = _collect_files_by_root(source_roots)
+    progress = progress_callback or (lambda _message: None)
+    normalized_source_roots = [str(item) for item in (source_roots or [])]
+
+    resume_state: dict = {}
+    if run_store:
+        if resume and run_id:
+            loaded = run_store.load_run(run_id)
+            resume_state = dict(loaded.get("checkpoints", {}))
+            run_store.mark_status(run_id, "running")
+        elif not run_id:
+            run_id = run_store.create_run(
+                target=target,
+                source_roots=normalized_source_roots,
+                dry_run=dry_run,
+            )
+
+    def checkpoint(stage: str, payload: dict) -> None:
+        if run_store and run_id:
+            run_store.save_checkpoint(run_id, stage=stage, payload=payload)
+
+    try:
+        files_by_root = _collect_files_by_root(
+            source_roots,
+            progress_callback=progress,
+            resume_payload=resume_state.get("scan") if resume else None,
+            checkpoint_callback=lambda payload: checkpoint("scan", payload),
+        )
+    except KeyboardInterrupt:
+        if run_store and run_id:
+            run_store.mark_status(run_id, "paused")
+        raise
+
     has_configured_sources = bool(source_roots)
     using_sample_data = not files_by_root and not has_configured_sources
 
     logs: list[str] = [
         "Stage 1: Suffix Screening",
     ]
+    if resume and run_id:
+        logs.append(f"Resumed run: {run_id}")
     if using_sample_data:
         logs.append(
             "No valid source files discovered from configured roots; using sample data."
@@ -45,6 +83,8 @@ def run_backup_pipeline(
     )
     review_stage1 = stage1_review_fn or run_stage1_review
     whitelist = review_stage1(suffix_rows)
+    checkpoint("stage1", {"whitelist": sorted(whitelist)})
+    progress(f"[stage1] whitelist={len(whitelist)}")
     logs.append(f"Whitelist size: {len(whitelist)}")
 
     logs.append("Stage 2: Path Tiering")
@@ -54,7 +94,11 @@ def run_backup_pipeline(
         use_sample_rows=using_sample_data,
         path_risk_fn=path_risk_fn,
         send_full_path_to_ai=send_full_path_to_ai,
+        progress_callback=progress,
+        resume_payload=resume_state.get("stage2") if resume else None,
+        checkpoint_callback=lambda payload: checkpoint("stage2", payload),
     )
+    progress(f"[ai] candidates={len(path_rows)}")
     logs.append(f"Tier candidates: {len(path_rows)}")
 
     logs.append("Stage 3: Final Review and Backup")
@@ -64,20 +108,33 @@ def run_backup_pipeline(
         selected_paths = run_stage3_review(
             path_rows,
             hide_low_value_default=(ai_prune_mode == "hide_low_value"),
+            resume_state=resume_state.get("review") if resume else None,
+            checkpoint_callback=lambda payload: checkpoint("review", payload),
         )
+    checkpoint("review", {"selected_paths": sorted(selected_paths)})
+    progress(f"[review] selected={len(selected_paths)}")
     logs.append(f"Selected paths: {len(selected_paths)}")
     logs.append(f"Target: {target}")
     logs.append(f"Dry run: {dry_run}")
 
     if dry_run:
+        checkpoint("copy", {"copied_paths": [], "copy_complete": True})
+        progress("[copy] dry run complete")
         logs.append("Dry run complete. No files copied.")
     else:
         copied_count = _copy_selected_paths(
             files_by_root=files_by_root,
             selected_paths=selected_paths,
             target_root=Path(target),
+            progress_callback=progress,
+            resume_payload=resume_state.get("copy") if resume else None,
+            checkpoint_callback=lambda payload: checkpoint("copy", payload),
         )
+        progress(f"[copy] copied={copied_count}")
         logs.append(f"Copied files: {copied_count}")
+
+    if run_store and run_id:
+        run_store.mark_status(run_id, "completed")
 
     return logs
 
@@ -137,16 +194,70 @@ def _sample_path_rows() -> list[PathReviewRow]:
 
 def _collect_files_by_root(
     source_roots: list[Path] | None,
+    progress_callback: Callable[[str], None] | None = None,
+    resume_payload: dict | None = None,
+    checkpoint_callback: Callable[[dict], None] | None = None,
 ) -> dict[Path, list[Path]]:
+    progress = progress_callback or (lambda _message: None)
     if not source_roots:
         return {}
 
+    if resume_payload and resume_payload.get("scan_complete"):
+        restored: dict[Path, list[Path]] = {}
+        raw = resume_payload.get("files_by_root", {})
+        for root, entries in raw.items():
+            restored[Path(root)] = [Path(item) for item in entries]
+        progress("[scan] restored completed scan checkpoint")
+        return restored
+
+    resumed_seen: set[str] = set()
+    if resume_payload:
+        raw = resume_payload.get("files_by_root", {})
+        for entries in raw.values():
+            resumed_seen.update(str(item) for item in entries)
+
     files_by_root: dict[Path, list[Path]] = {}
+    discovered = 0
     for root in source_roots:
         if not root.exists() or not root.is_dir():
             continue
-        files = [path for path in root.rglob("*") if path.is_file()]
+        progress(f"[scan] scanning root={root}")
+        files = []
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            text = str(path)
+            if text in resumed_seen:
+                continue
+            files.append(path)
+            discovered += 1
+            if discovered % 200 == 0:
+                progress(f"[scan] discovered={discovered} current={path.parent}")
+                if checkpoint_callback:
+                    merged = {
+                        str(item_root): [str(item) for item in items]
+                        for item_root, items in files_by_root.items()
+                    }
+                    merged.setdefault(str(root), [])
+                    merged[str(root)].extend(str(item) for item in files)
+                    checkpoint_callback(
+                        {
+                            "files_by_root": merged,
+                            "scan_complete": False,
+                        }
+                    )
         files_by_root[root] = sorted(files, key=lambda item: str(item))
+
+    if checkpoint_callback:
+        checkpoint_callback(
+            {
+                "files_by_root": {
+                    str(root): [str(item) for item in paths]
+                    for root, paths in files_by_root.items()
+                },
+                "scan_complete": True,
+            }
+        )
     return files_by_root
 
 
@@ -220,7 +331,11 @@ def _build_stage2_rows(
     use_sample_rows: bool,
     path_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
     send_full_path_to_ai: bool = False,
+    progress_callback: Callable[[str], None] | None = None,
+    resume_payload: dict | None = None,
+    checkpoint_callback: Callable[[dict], None] | None = None,
 ) -> list[PathReviewRow]:
+    progress = progress_callback or (lambda _message: None)
     if not files_by_root:
         return _sample_path_rows() if use_sample_rows else []
 
@@ -235,7 +350,34 @@ def _build_stage2_rows(
     candidate_inputs = [
         str(path) if send_full_path_to_ai else path.name for path in candidate_paths
     ]
-    path_risk_lookup = path_risk_fn(candidate_inputs) if path_risk_fn else {}
+    path_risk_lookup: dict[str, dict[str, object]] = {}
+    if resume_payload and isinstance(resume_payload.get("risk_lookup"), dict):
+        raw_lookup = dict(resume_payload.get("risk_lookup", {}))
+        path_risk_lookup = {
+            str(key): dict(value)
+            for key, value in raw_lookup.items()
+            if isinstance(value, dict)
+        }
+
+    if path_risk_fn:
+        batch_size = 50
+        start_index = int(resume_payload.get("next_index", 0)) if resume_payload else 0
+        for index in range(start_index, len(candidate_inputs), batch_size):
+            batch = candidate_inputs[index : index + batch_size]
+            if not batch:
+                continue
+            progress(
+                f"[ai:path] querying batch={index // batch_size + 1} size={len(batch)}"
+            )
+            update = path_risk_fn(batch)
+            path_risk_lookup.update(update)
+            if checkpoint_callback:
+                checkpoint_callback(
+                    {
+                        "next_index": index + len(batch),
+                        "risk_lookup": path_risk_lookup,
+                    }
+                )
 
     rows: list[PathReviewRow] = []
     for path in candidate_paths:
@@ -294,17 +436,47 @@ def _apply_suffix_risk_override(
 
 
 def _copy_selected_paths(
-    files_by_root: dict[Path, list[Path]], selected_paths: set[str], target_root: Path
+    files_by_root: dict[Path, list[Path]],
+    selected_paths: set[str],
+    target_root: Path,
+    progress_callback: Callable[[str], None] | None = None,
+    resume_payload: dict | None = None,
+    checkpoint_callback: Callable[[dict], None] | None = None,
 ) -> int:
+    progress = progress_callback or (lambda _message: None)
     selected_lookup = set(selected_paths)
+    already_copied = {
+        str(path)
+        for path in (resume_payload.get("copied_paths", []) if resume_payload else [])
+    }
     copied = 0
 
     for src_root, paths in files_by_root.items():
         for src_path in paths:
-            if str(src_path) not in selected_lookup:
+            src_path_str = str(src_path)
+            if src_path_str not in selected_lookup:
                 continue
+            if src_path_str in already_copied:
+                continue
+            progress(f"[copy] copying {src_path_str}")
             mirror_copy_one(src_root=src_root, src_path=src_path, dst_root=target_root)
             copied += 1
+            already_copied.add(src_path_str)
+            if checkpoint_callback:
+                checkpoint_callback(
+                    {
+                        "copied_paths": sorted(already_copied),
+                        "copy_complete": False,
+                    }
+                )
+
+    if checkpoint_callback:
+        checkpoint_callback(
+            {
+                "copied_paths": sorted(already_copied),
+                "copy_complete": True,
+            }
+        )
 
     return copied
 

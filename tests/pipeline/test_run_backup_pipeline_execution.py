@@ -1,4 +1,5 @@
 from ark.pipeline.run_backup import run_backup_pipeline
+from ark.state.backup_run_store import BackupRunStore
 
 
 def test_run_backup_pipeline_executes_mirror_copy_for_selected_paths(tmp_path) -> None:
@@ -25,3 +26,66 @@ def test_run_backup_pipeline_executes_mirror_copy_for_selected_paths(tmp_path) -
     )
 
     assert (target / "src" / "docs" / "a.txt").exists()
+
+
+def test_run_backup_pipeline_emits_progress_messages(tmp_path) -> None:
+    src_root = tmp_path / "src"
+    src_root.mkdir()
+    (src_root / "docs").mkdir()
+    (src_root / "docs" / "a.txt").write_text("hello", encoding="utf-8")
+    progress: list[str] = []
+
+    run_backup_pipeline(
+        target=str(tmp_path / "backup"),
+        dry_run=True,
+        source_roots=[src_root],
+        stage1_review_fn=lambda rows: {row.ext for row in rows},
+        stage3_review_fn=lambda rows: {row.path for row in rows},
+        progress_callback=progress.append,
+    )
+
+    joined = "\n".join(progress)
+    assert "scan" in joined.lower()
+    assert "ai" in joined.lower()
+    assert "copy" in joined.lower() or "dry run" in joined.lower()
+
+
+def test_run_backup_pipeline_can_resume_from_saved_selection_state(tmp_path) -> None:
+    src_root = tmp_path / "src"
+    src_root.mkdir()
+    (src_root / "docs").mkdir()
+    first = src_root / "docs" / "a.txt"
+    second = src_root / "docs" / "b.txt"
+    first.write_text("a", encoding="utf-8")
+    second.write_text("b", encoding="utf-8")
+
+    store = BackupRunStore(tmp_path / "runs")
+    run_id = store.create_run(
+        target=str(tmp_path / "backup"),
+        source_roots=[str(src_root)],
+        dry_run=True,
+    )
+    store.save_checkpoint(
+        run_id,
+        stage="review",
+        payload={
+            "selected_paths": [str(first)],
+            "current_dir": str(src_root / "docs"),
+            "page_index": 0,
+            "show_low_value": True,
+        },
+    )
+    store.mark_status(run_id, "paused")
+
+    logs = run_backup_pipeline(
+        target=str(tmp_path / "backup"),
+        dry_run=True,
+        source_roots=[src_root],
+        stage1_review_fn=lambda rows: {row.ext for row in rows},
+        stage3_review_fn=lambda rows: {row.path for row in rows},
+        run_store=store,
+        run_id=run_id,
+        resume=True,
+    )
+
+    assert any("resumed" in line.lower() for line in logs)
