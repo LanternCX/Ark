@@ -115,7 +115,17 @@ Ark 会进入一级 TUI 菜单：
 3. `Stage 3: Final Review and Backup`
    - 作用：最终确认并执行复制。
    - 后果：当 `Dry run=False` 时会实际写入备份文件。
-   - 建议：确认目标路径和选中数量后再执行。
+   - 建议：先在树形分页视图中完成目录级决策，再确认选中数量。
+
+### Stage 3 树形复核（新增）
+
+- 最终选择从“单行路径列表”升级为“树形分页视图”。
+- 目录节点支持三态：
+  - `checked`：子孙文件全部选中
+  - `partial`：子孙文件部分选中
+  - `unchecked`：子孙文件全部未选
+- 勾选目录会递归作用于全部子孙节点。
+- 低价值分支可默认隐藏以降低噪音，并可在同一轮复核中随时切换显示。
 
 ### 首次使用建议流程
 
@@ -127,12 +137,16 @@ Ark 会进入一级 TUI 菜单：
 
 ## 隐私边界
 
-Ark 仅向 AI 发送最小必要元数据：
-- basename
-- extension
-- parent_dir_name（仅最后一层目录）
-- size_bucket
-- mtime_bucket
+Ark 支持两种 AI 数据共享模式：
+
+1. 最小元数据模式
+   - basename
+   - extension
+   - parent_dir_name（仅最后一层目录）
+   - size_bucket
+   - mtime_bucket
+2. 完整路径模式（可选开启）
+   - 发送完整文件路径字符串，用于后缀/路径减枝建议
 
 Ark 不上传文件内容。
 

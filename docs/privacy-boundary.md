@@ -1,12 +1,15 @@
 # Privacy Boundary
 
-Ark sends only minimal metadata to AI models:
+Ark supports two AI data-sharing modes:
 
-- basename
-- extension
-- parent_dir_name (last segment)
-- size_bucket
-- mtime_bucket
+1. Minimal metadata mode
+   - basename
+   - extension
+   - parent_dir_name (last segment)
+   - size_bucket
+   - mtime_bucket
+2. Full path mode (opt-in)
+   - full file path strings for suffix and path pruning recommendations
 
 Ark does not send file content.
 

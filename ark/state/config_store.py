@@ -35,6 +35,10 @@ class JSONConfigStore:
             google_client_id=str(payload.get("google_client_id", "")),
             google_client_secret=str(payload.get("google_client_secret", "")),
             google_refresh_token=str(payload.get("google_refresh_token", "")),
+            ai_suffix_enabled=bool(payload.get("ai_suffix_enabled", True)),
+            ai_path_enabled=bool(payload.get("ai_path_enabled", True)),
+            send_full_path_to_ai=bool(payload.get("send_full_path_to_ai", False)),
+            ai_prune_mode=str(payload.get("ai_prune_mode", "hide_low_value")),
         )
 
     def save(self, config: PipelineConfig) -> None:
@@ -54,5 +58,9 @@ class JSONConfigStore:
             "google_client_id": config.google_client_id,
             "google_client_secret": config.google_client_secret,
             "google_refresh_token": config.google_refresh_token,
+            "ai_suffix_enabled": config.ai_suffix_enabled,
+            "ai_path_enabled": config.ai_path_enabled,
+            "send_full_path_to_ai": config.send_full_path_to_ai,
+            "ai_prune_mode": config.ai_prune_mode,
         }
         self.file_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

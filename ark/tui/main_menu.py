@@ -246,6 +246,20 @@ def _run_llm_settings(
         )
         api_key = password_prompt("LLM API key", default_api_key).strip()
 
+    ai_suffix_enabled = confirm_prompt(
+        "Use AI suffix risk classification?", config.ai_suffix_enabled
+    )
+    ai_path_enabled = confirm_prompt(
+        "Use AI path pruning suggestions?", config.ai_path_enabled
+    )
+    send_full_path_to_ai = confirm_prompt(
+        "Send full file paths to AI?", config.send_full_path_to_ai
+    )
+    hide_low_value_default = confirm_prompt(
+        "Hide low-value branches by default?",
+        config.ai_prune_mode == "hide_low_value",
+    )
+
     config.llm_enabled = True
     config.llm_provider_group = selected_group
     config.llm_provider = selected_preset.provider
@@ -256,6 +270,10 @@ def _run_llm_settings(
     config.google_client_id = google_client_id
     config.google_client_secret = google_client_secret
     config.google_refresh_token = google_refresh_token
+    config.ai_suffix_enabled = ai_suffix_enabled
+    config.ai_path_enabled = ai_path_enabled
+    config.send_full_path_to_ai = send_full_path_to_ai
+    config.ai_prune_mode = "hide_low_value" if hide_low_value_default else "show_all"
 
     should_test_connectivity = confirm_prompt("Test LLM connectivity now?", True)
     if should_test_connectivity:

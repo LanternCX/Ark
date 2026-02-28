@@ -23,7 +23,8 @@ Ark enforces one-way dependencies:
 3. Settings persist to `~/.ark/config.json` via `JSONConfigStore`.
 4. `Execute Backup` runs staged pipeline in `ark/pipeline/run_backup.py`.
 5. Stage 1/2/3 decisions produce final selected paths.
-6. `backup.executor` mirrors selected files unless dry run.
+6. Stage 3 uses paginated tree navigation with tri-state folder selection.
+7. `backup.executor` mirrors selected files unless dry run.
 
 ## 3. Configuration Model
 
@@ -45,6 +46,12 @@ Validation rules run before execution. Typical blockers:
   - `api_key` mode.
   - `google_oauth` mode with browser login and token refresh.
 - OAuth token refresh uses Google official auth SDK.
+
+AI classification scopes:
+
+- Suffix risk recommendation can influence stage-1 default whitelist.
+- Path risk recommendation can influence stage-2 reasons and stage-3 low-value pruning defaults.
+- Full path payloads are supported when configured; no file content is sent.
 
 ## 5. Testing Contract
 

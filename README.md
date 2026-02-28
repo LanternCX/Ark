@@ -115,7 +115,17 @@ This section explains each TUI stage in user terms: what it does, what happens i
 3. `Stage 3: Final Review and Backup`
    - Purpose: final confirmation and copy execution.
    - Consequence: with `Dry run=False`, this produces real copied files.
-   - Recommendation: verify target path and selected count before confirming.
+   - Recommendation: use tree paging to review folder-level decisions first, then confirm selected count.
+
+### Stage 3 Tree Review (New)
+
+- Final selection uses a paginated tree view instead of a flat one-line path list.
+- Folder nodes support tri-state selection:
+  - `checked`: all descendant files selected
+  - `partial`: only part of descendants selected
+  - `unchecked`: no descendants selected
+- Toggling a folder applies recursively to all descendants.
+- Low-value branches can be hidden by default to reduce noise and can be shown again in the same review session.
 
 ### Suggested First-Run Flow
 
@@ -127,12 +137,16 @@ This section explains each TUI stage in user terms: what it does, what happens i
 
 ## Privacy Boundary
 
-Ark sends only minimal metadata to AI:
-- basename
-- extension
-- parent_dir_name (last segment only)
-- size_bucket
-- mtime_bucket
+Ark supports two AI data-sharing modes:
+
+1. Minimal metadata mode
+   - basename
+   - extension
+   - parent_dir_name (last segment only)
+   - size_bucket
+   - mtime_bucket
+2. Full path mode (opt-in)
+   - full file path strings are sent for suffix/path pruning recommendations
 
 Ark sends no file content.
 

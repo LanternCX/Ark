@@ -119,3 +119,73 @@ def test_run_backup_pipeline_does_not_use_sample_data_when_sources_configured_bu
 
     assert not any("using sample data" in line.lower() for line in logs)
     assert any("no files discovered" in line.lower() for line in logs)
+
+
+def test_run_backup_pipeline_applies_suffix_risk_overrides(tmp_path) -> None:
+    (tmp_path / "cache.tmp").write_text("cache", encoding="utf-8")
+    observed_rows = []
+
+    def fake_stage1_review(rows):
+        nonlocal observed_rows
+        observed_rows = rows
+        return {row.ext for row in rows if row.label == "keep"}
+
+    run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[tmp_path],
+        stage1_review_fn=fake_stage1_review,
+        stage3_review_fn=lambda _rows: set(),
+        suffix_risk_fn=lambda _exts: {
+            ".tmp": {
+                "risk": "high_value",
+                "confidence": 0.95,
+                "reason": "Requested by user policy",
+            }
+        },
+    )
+
+    assert len(observed_rows) == 1
+    assert observed_rows[0].ext == ".tmp"
+    assert observed_rows[0].label == "keep"
+    assert "Requested by user policy" in observed_rows[0].reason
+
+
+def test_run_backup_pipeline_passes_full_paths_to_path_risk_function(tmp_path) -> None:
+    (tmp_path / "a.txt").write_text("a", encoding="utf-8")
+    (tmp_path / "b.tmp").write_text("b", encoding="utf-8")
+    observed_paths: list[str] = []
+    observed_stage3_rows = []
+
+    def fake_path_risk(paths: list[str]) -> dict[str, dict[str, object]]:
+        nonlocal observed_paths
+        observed_paths = paths
+        return {
+            paths[1]: {
+                "risk": "low_value",
+                "confidence": 0.9,
+                "reason": "Likely temp file",
+                "score": 0.1,
+            }
+        }
+
+    def fake_stage3_review(rows):
+        nonlocal observed_stage3_rows
+        observed_stage3_rows = rows
+        return set()
+
+    run_backup_pipeline(
+        target="X:/ArkBackup",
+        dry_run=True,
+        source_roots=[tmp_path],
+        stage1_review_fn=lambda rows: {row.ext for row in rows},
+        stage3_review_fn=fake_stage3_review,
+        path_risk_fn=fake_path_risk,
+        send_full_path_to_ai=True,
+    )
+
+    assert all(str(tmp_path) in item for item in observed_paths)
+    row_by_path = {row.path: row for row in observed_stage3_rows}
+    low_path = str(tmp_path / "b.tmp")
+    assert row_by_path[low_path].ai_risk == "low_value"
+    assert "Likely temp" in row_by_path[low_path].reason

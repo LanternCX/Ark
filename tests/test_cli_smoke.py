@@ -41,6 +41,10 @@ def test_execute_backup_expands_user_paths(monkeypatch) -> None:
         target="~/backup",
         source_roots=["~/Code"],
         dry_run=True,
+        ai_suffix_enabled=False,
+        ai_path_enabled=True,
+        send_full_path_to_ai=True,
+        ai_prune_mode="show_all",
     )
 
     cli_module._execute_backup(config)
@@ -49,3 +53,7 @@ def test_execute_backup_expands_user_paths(monkeypatch) -> None:
     expected_target = str((Path.home() / "backup").resolve())
     assert observed["source_roots"] == [expected_root]
     assert observed["target"] == expected_target
+    assert observed["send_full_path_to_ai"] is True
+    assert observed["ai_prune_mode"] == "show_all"
+    assert observed["suffix_risk_fn"] is None
+    assert callable(observed["path_risk_fn"])

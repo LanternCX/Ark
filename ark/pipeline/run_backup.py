@@ -16,6 +16,10 @@ def run_backup_pipeline(
     source_roots: list[Path] | None = None,
     stage1_review_fn: Callable[[list[SuffixReviewRow]], set[str]] | None = None,
     stage3_review_fn: Callable[[list[PathReviewRow]], set[str]] | None = None,
+    suffix_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
+    path_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
+    send_full_path_to_ai: bool = False,
+    ai_prune_mode: str = "hide_low_value",
 ) -> list[str]:
     """Run staged review flow and return progress logs."""
     files_by_root = _collect_files_by_root(source_roots)
@@ -34,7 +38,11 @@ def run_backup_pipeline(
             "No files discovered under configured source roots; review source paths in Settings."
         )
 
-    suffix_rows = _build_stage1_rows(files_by_root, use_sample_rows=using_sample_data)
+    suffix_rows = _build_stage1_rows(
+        files_by_root,
+        use_sample_rows=using_sample_data,
+        suffix_risk_fn=suffix_risk_fn,
+    )
     review_stage1 = stage1_review_fn or run_stage1_review
     whitelist = review_stage1(suffix_rows)
     logs.append(f"Whitelist size: {len(whitelist)}")
@@ -44,12 +52,19 @@ def run_backup_pipeline(
         files_by_root,
         whitelist,
         use_sample_rows=using_sample_data,
+        path_risk_fn=path_risk_fn,
+        send_full_path_to_ai=send_full_path_to_ai,
     )
     logs.append(f"Tier candidates: {len(path_rows)}")
 
     logs.append("Stage 3: Final Review and Backup")
-    review_stage3 = stage3_review_fn or run_stage3_review
-    selected_paths = review_stage3(path_rows)
+    if stage3_review_fn:
+        selected_paths = stage3_review_fn(path_rows)
+    else:
+        selected_paths = run_stage3_review(
+            path_rows,
+            hide_low_value_default=(ai_prune_mode == "hide_low_value"),
+        )
     logs.append(f"Selected paths: {len(selected_paths)}")
     logs.append(f"Target: {target}")
     logs.append(f"Dry run: {dry_run}")
@@ -130,13 +145,15 @@ def _collect_files_by_root(
     for root in source_roots:
         if not root.exists() or not root.is_dir():
             continue
-        files_by_root[root] = [path for path in root.rglob("*") if path.is_file()]
+        files = [path for path in root.rglob("*") if path.is_file()]
+        files_by_root[root] = sorted(files, key=lambda item: str(item))
     return files_by_root
 
 
 def _build_stage1_rows(
     files_by_root: dict[Path, list[Path]],
     use_sample_rows: bool,
+    suffix_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
 ) -> list[SuffixReviewRow]:
     if not files_by_root:
         return _sample_suffix_rows() if use_sample_rows else []
@@ -152,8 +169,19 @@ def _build_stage1_rows(
         return _sample_suffix_rows() if use_sample_rows else []
 
     rows: list[SuffixReviewRow] = []
+    risk_overrides = (
+        suffix_risk_fn(sorted(discovered_extensions)) if suffix_risk_fn else {}
+    )
     for ext in sorted(discovered_extensions):
         label, tag, confidence, reason = _stage1_heuristic(ext)
+        label, tag, confidence, reason = _apply_suffix_risk_override(
+            ext,
+            label,
+            tag,
+            confidence,
+            reason,
+            risk_overrides,
+        )
         rows.append(
             SuffixReviewRow(
                 ext=ext,
@@ -190,33 +218,79 @@ def _build_stage2_rows(
     files_by_root: dict[Path, list[Path]],
     whitelist: set[str],
     use_sample_rows: bool,
+    path_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
+    send_full_path_to_ai: bool = False,
 ) -> list[PathReviewRow]:
     if not files_by_root:
         return _sample_path_rows() if use_sample_rows else []
 
-    rows: list[PathReviewRow] = []
+    candidate_paths: list[Path] = []
     for paths in files_by_root.values():
         for path in paths:
             ext = path.suffix.lower()
             if whitelist and ext not in whitelist:
                 continue
+            candidate_paths.append(path)
 
-            signal_score = extension_score(path)
-            ai_score = _ai_score_heuristic(path)
-            confidence = max(signal_score, ai_score)
-            tier = classify_tier(
-                signal_score=signal_score, ai_score=ai_score, confidence=confidence
+    candidate_inputs = [
+        str(path) if send_full_path_to_ai else path.name for path in candidate_paths
+    ]
+    path_risk_lookup = path_risk_fn(candidate_inputs) if path_risk_fn else {}
+
+    rows: list[PathReviewRow] = []
+    for path in candidate_paths:
+        signal_score = extension_score(path)
+        ai_score = _ai_score_heuristic(path)
+
+        key = str(path) if send_full_path_to_ai else path.name
+        override = path_risk_lookup.get(key) or path_risk_lookup.get(str(path))
+        ai_risk = "neutral"
+        reason = "Local signal + heuristic AI fusion"
+        override_confidence = 0.0
+        if override:
+            ai_risk = str(override.get("risk", "neutral"))
+            reason = str(override.get("reason", reason))
+            ai_score = float(override.get("score", ai_score))
+            override_confidence = float(override.get("confidence", 0.0))
+
+        confidence = max(signal_score, ai_score, override_confidence)
+        tier = classify_tier(
+            signal_score=signal_score, ai_score=ai_score, confidence=confidence
+        )
+        rows.append(
+            PathReviewRow(
+                path=str(path),
+                tier=tier,
+                size_bytes=path.stat().st_size,
+                reason=reason,
+                confidence=confidence,
+                ai_risk=ai_risk,
             )
-            rows.append(
-                PathReviewRow(
-                    path=str(path),
-                    tier=tier,
-                    size_bytes=path.stat().st_size,
-                    reason="Local signal + heuristic AI fusion",
-                    confidence=confidence,
-                )
-            )
+        )
     return rows
+
+
+def _apply_suffix_risk_override(
+    ext: str,
+    label: str,
+    tag: str,
+    confidence: float,
+    reason: str,
+    risk_overrides: dict[str, dict[str, object]],
+) -> tuple[str, str, float, str]:
+    override = risk_overrides.get(ext)
+    if not override:
+        return label, tag, confidence, reason
+
+    risk = str(override.get("risk", "neutral"))
+    overridden_confidence = float(override.get("confidence", confidence))
+    overridden_reason = str(override.get("reason", reason))
+
+    if risk == "high_value":
+        return "keep", "ai-high-value", overridden_confidence, overridden_reason
+    if risk == "low_value":
+        return "drop", "ai-low-value", overridden_confidence, overridden_reason
+    return label, tag, overridden_confidence, overridden_reason
 
 
 def _copy_selected_paths(
