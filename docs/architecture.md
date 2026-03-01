@@ -59,6 +59,7 @@ AI classification scopes:
 - Suffix risk recommendation can influence stage-1 default whitelist.
 - Path risk recommendation can influence stage-2 reasons and stage-3 low-value pruning defaults.
 - Stage-3 can run serial AI directory DFS decisions (`keep/drop/not_sure`) before final interactive confirmation.
+- During `dry_run`, AI dispatch uses local heuristics only and skips remote provider calls.
 - Full path payloads are supported when configured; no file content is sent.
 - Scan pruning and suffix category defaults are loaded from external rule files, then fused with AI decisions.
 

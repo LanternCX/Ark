@@ -57,7 +57,7 @@ Every Ark run follows the same end-to-end flow:
 3. **Settings become active**: once saved, updated settings are used by the current run.
 4. **Pre-run validation**: before execution, Ark checks required inputs for your chosen mode (paths, source roots, model/auth data when applicable).
 5. **Three execution stages**: Stage 1 (suffix screening), Stage 2 (path tiering), Stage 3 (final confirmation).
-6. **Write behavior**: with `Dry run = No`, confirmed files are copied; with `Dry run = Yes`, Ark only simulates and reports results.
+6. **Write behavior**: with `Dry run = No`, confirmed files are copied; with `Dry run = Yes`, Ark simulates and reports results without file writes, and AI decisions use local heuristics only (no remote LLM requests).
 7. **Resume support**: checkpoints are written continuously so interrupted runs can be resumed.
 
 In short: **configure -> preview -> commit**.
@@ -68,7 +68,7 @@ In short: **configure -> preview -> commit**.
 | --- | --- | --- |
 | `Backup target path` | Destination root for copied files | If this path is wrong or not writable, backup cannot complete as expected. |
 | `Source roots (comma separated)` | Which folders Ark scans | Narrow scope can miss files; overly broad scope increases review noise and time. |
-| `Dry run?` | Whether Ark actually copies files | `Yes`: full review flow, no file writes. `No`: confirmed selections are copied. |
+| `Dry run?` | Whether Ark actually copies files | `Yes`: full review flow, no file writes, and no remote LLM calls (local heuristics only). `No`: confirmed selections are copied. |
 | `Non-interactive reviews?` | Whether manual confirmation screens are shown | `Yes`: faster run with defaults only. `No`: you confirm selections interactively. |
 
 Decision tip: on first use, keep `Dry run? = Yes` and `Non-interactive reviews? = No`.
