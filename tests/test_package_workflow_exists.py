@@ -18,7 +18,13 @@ def test_package_workflow_has_tag_trigger_and_release() -> None:
 def test_package_workflow_builds_windows_and_macos() -> None:
     content = Path(".github/workflows/package.yml").read_text(encoding="utf-8")
     assert "windows-latest" in content
-    assert "macos-latest" in content
+    assert "macos-14" in content
+
+
+def test_package_workflow_sets_python_architecture_from_matrix() -> None:
+    content = Path(".github/workflows/package.yml").read_text(encoding="utf-8")
+    assert "python_architecture" in content
+    assert "architecture: ${{ matrix.python_architecture }}" in content
 
 
 def test_package_workflow_bundles_runtime_config_and_rules() -> None:
