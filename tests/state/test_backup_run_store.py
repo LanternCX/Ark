@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ark.state.backup_run_store import BackupRunStore
+from src.state.backup_run_store import BackupRunStore
 
 
 def test_backup_run_store_can_create_checkpoint_and_resume_latest(

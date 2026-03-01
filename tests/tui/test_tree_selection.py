@@ -1,4 +1,4 @@
-from ark.tui.tree_selection import SelectionState, TreeSelectionState, paginate_items
+from src.tui.tree_selection import SelectionState, TreeSelectionState, paginate_items
 
 
 def test_directory_is_partial_when_only_some_children_selected() -> None:

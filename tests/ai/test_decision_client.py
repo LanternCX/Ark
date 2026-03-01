@@ -1,4 +1,4 @@
-import ark.ai.decision_client as decision_client
+import src.ai.decision_client as decision_client
 
 
 def test_llm_suffix_risk_parses_json_payload(monkeypatch) -> None:

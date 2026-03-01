@@ -4,9 +4,9 @@ from prompt_toolkit.application.current import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
-import ark.tui.stage1_review as stage1_review
+import src.tui.stage1_review as stage1_review
 
-from ark.tui.stage1_review import (
+from src.tui.stage1_review import (
     SuffixReviewRow,
     _default_checkbox_prompt,
     apply_default_selection,

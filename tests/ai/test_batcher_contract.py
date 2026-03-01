@@ -1,4 +1,4 @@
-from ark.ai.batcher import chunk_records
+from src.ai.batcher import chunk_records
 
 
 def test_chunk_records_respects_batch_size() -> None:

@@ -1,5 +1,5 @@
-from ark.pipeline.config import PipelineConfig
-from ark.tui.main_menu import run_main_menu
+from src.pipeline.config import PipelineConfig
+from src.tui.main_menu import run_main_menu
 
 
 def test_main_menu_settings_then_execute_then_exit() -> None:

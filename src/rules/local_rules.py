@@ -6,6 +6,8 @@ import fnmatch
 from functools import lru_cache
 from pathlib import Path
 
+from src.runtime_paths import get_runtime_rules_dir
+
 try:  # Python 3.11+
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
@@ -17,15 +19,13 @@ except ModuleNotFoundError:  # pragma: no cover
     pathspec = None  # type: ignore
 
 
-RULES_DIR = Path(__file__).resolve().parent
-BASELINE_IGNORE_FILE = RULES_DIR / "baseline.ignore"
-SUFFIX_RULES_FILE = RULES_DIR / "suffix_rules.toml"
+PACKAGE_RULES_DIR = Path(__file__).resolve().parent
 
 
 def build_scan_pathspec(source_root: Path):
     """Build gitignore-style matcher from baseline + project rules."""
     lines: list[str] = []
-    lines.extend(_read_ignore_file(BASELINE_IGNORE_FILE))
+    lines.extend(_read_ignore_file(_resolve_rules_file("baseline.ignore")))
     lines.extend(_read_ignore_file(source_root / ".gitignore"))
     lines.extend(_read_ignore_file(source_root / ".arkignore"))
     return _pathspec_from_lines(lines)
@@ -121,11 +121,23 @@ def suffix_category(ext: str) -> str:
     return "Other"
 
 
-@lru_cache(maxsize=1)
 def _load_suffix_rules() -> dict:
-    content = SUFFIX_RULES_FILE.read_bytes()
+    rules_path = _resolve_rules_file("suffix_rules.toml")
+    content = _read_suffix_rules_bytes(str(rules_path.resolve()))
     data = tomllib.loads(content.decode("utf-8"))
     return data
+
+
+@lru_cache(maxsize=4)
+def _read_suffix_rules_bytes(path: str) -> bytes:
+    return Path(path).read_bytes()
+
+
+def _resolve_rules_file(file_name: str) -> Path:
+    runtime_file = get_runtime_rules_dir() / file_name
+    if runtime_file.exists():
+        return runtime_file
+    return PACKAGE_RULES_DIR / file_name
 
 
 def _read_ignore_file(path: Path) -> list[str]:

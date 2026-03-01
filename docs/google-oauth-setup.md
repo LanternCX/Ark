@@ -40,7 +40,7 @@ Then fill:
 - `Google client secret`
 - Confirm `Login with Google in browser now?`
 
-After browser login succeeds, Ark stores refresh token in `~/.ark/config.json`.
+After browser login succeeds, Ark stores refresh token in `<runtime-root>/.ark/config.json`.
 
 ## 5. Stored Credentials
 
@@ -50,7 +50,7 @@ Ark stores these values locally:
 - `google_client_secret`
 - `google_refresh_token`
 
-Treat `~/.ark/config.json` as sensitive. Do not commit or share it.
+Treat `<runtime-root>/.ark/config.json` as sensitive. Do not commit or share it.
 
 ## 6. Common Errors
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ark.ai.router import classify_batch
+from src.ai.router import classify_batch
 
 
 def llm_suffix_risk(

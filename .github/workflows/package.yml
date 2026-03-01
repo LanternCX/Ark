@@ -13,8 +13,17 @@ on:
 
 jobs:
   build:
-    name: Build windows-x64
-    runs-on: windows-latest
+    name: Build ${{ matrix.artifact_suffix }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_suffix: windows-x64
+            binary_name: ark.exe
+          - os: macos-latest
+            artifact_suffix: macos-arm64
+            binary_name: ark
 
     steps:
       - name: Checkout repository
@@ -54,19 +63,21 @@ jobs:
             --hidden-import tiktoken_ext.openai_public \
             --collect-data tiktoken_ext \
             --hidden-import socksio \
-            --name "ark" ark/cli.py
+            --name "ark" main.py
 
-      - name: Bundle binary and config
+      - name: Bundle binary and runtime files
         shell: bash
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.VERSION }}"
-          BUNDLE="ark-${VERSION}-windows-x64"
+          BUNDLE="ark-${VERSION}-${{ matrix.artifact_suffix }}"
 
-          mkdir -p "bundle/$BUNDLE"
-          cp "dist/ark.exe" "bundle/$BUNDLE/"
+          mkdir -p "bundle/$BUNDLE/.ark" "bundle/$BUNDLE/src/rules"
+          cp "dist/${{ matrix.binary_name }}" "bundle/$BUNDLE/"
+          cp "src/rules/baseline.ignore" "bundle/$BUNDLE/src/rules/"
+          cp "src/rules/suffix_rules.toml" "bundle/$BUNDLE/src/rules/"
 
-          cat > "bundle/$BUNDLE/config.json" <<'EOF'
+          cat > "bundle/$BUNDLE/.ark/config.json" <<'EOF'
           {
             "target": "",
             "source_roots": [],
@@ -88,7 +99,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ark-${{ steps.version.outputs.VERSION }}-windows-x64
+          name: ark-${{ steps.version.outputs.VERSION }}-${{ matrix.artifact_suffix }}
           path: bundle/*.zip
           if-no-files-found: error
 

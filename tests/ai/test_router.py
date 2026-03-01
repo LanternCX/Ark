@@ -1,4 +1,4 @@
-from ark.ai import router
+from src.ai import router
 
 
 def test_check_llm_connectivity_sends_hello_and_returns_reply(monkeypatch) -> None:

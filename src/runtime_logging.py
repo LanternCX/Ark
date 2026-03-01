@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
-from pathlib import Path
 
 from rich.console import Console
 from rich.logging import RichHandler
 
-LOG_DIR = Path.home() / ".ark" / "logs"
-LOG_FILE = LOG_DIR / "ark.log"
+from src.runtime_paths import get_runtime_log_path
+
 MAX_BYTES = 5 * 1024 * 1024
 BACKUP_COUNT = 5
 ACTIVE_LOG_LEVEL = logging.INFO
@@ -55,7 +54,8 @@ def adopt_dependency_loggers(
 def setup_runtime_logging(level: str = "INFO") -> None:
     """Configure root logging once for Ark runtime sessions."""
     global ACTIVE_LOG_LEVEL
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = get_runtime_log_path()
+    log_file.parent.mkdir(parents=True, exist_ok=True)
     resolved_level = getattr(logging, level.upper(), logging.INFO)
     ACTIVE_LOG_LEVEL = resolved_level
 
@@ -68,7 +68,7 @@ def setup_runtime_logging(level: str = "INFO") -> None:
     root.handlers.clear()
 
     file_handler = logging.handlers.RotatingFileHandler(
-        filename=str(LOG_FILE),
+        filename=str(log_file),
         maxBytes=MAX_BYTES,
         backupCount=BACKUP_COUNT,
         encoding="utf-8",

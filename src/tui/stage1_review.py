@@ -12,7 +12,7 @@ from prompt_toolkit.widgets import CheckboxList
 from rich.console import Console
 from rich.table import Table
 
-from ark.rules.local_rules import suffix_category
+from src.rules.local_rules import suffix_category
 
 
 @dataclass(frozen=True)

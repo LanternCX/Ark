@@ -1,6 +1,6 @@
 from rich.console import Console
 
-from ark.tui.stage3_review import (
+from src.tui.stage3_review import (
     PathReviewRow,
     _default_checkbox_prompt,
     run_stage3_review,
@@ -58,7 +58,7 @@ def test_default_checkbox_prompt_sets_checked_choices(monkeypatch) -> None:
         captured.update(kwargs)
         return FakePrompt()
 
-    monkeypatch.setattr("ark.tui.stage3_review.questionary.checkbox", fake_checkbox)
+    monkeypatch.setattr("src.tui.stage3_review.questionary.checkbox", fake_checkbox)
 
     result = _default_checkbox_prompt(
         message="Final backup selection",

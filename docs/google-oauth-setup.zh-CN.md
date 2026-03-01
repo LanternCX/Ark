@@ -40,7 +40,7 @@
 - `Google client secret`
 - 确认 `Login with Google in browser now?`
 
-浏览器授权成功后，Ark 会把 refresh token 保存到 `~/.ark/config.json`。
+浏览器授权成功后，Ark 会把 refresh token 保存到 `<运行目录>/.ark/config.json`。
 
 ## 5. 本地保存的凭据
 
@@ -50,7 +50,7 @@ Ark 会在本地保存：
 - `google_client_secret`
 - `google_refresh_token`
 
-请将 `~/.ark/config.json` 视为敏感文件，不要提交或分享。
+请将 `<运行目录>/.ark/config.json` 视为敏感文件，不要提交或分享。
 
 ## 6. 常见错误
 

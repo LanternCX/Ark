@@ -1,4 +1,4 @@
-from ark.pipeline.config import PipelineConfig
+from src.pipeline.config import PipelineConfig
 
 
 def test_validate_for_execution_requires_provider_and_model_when_llm_enabled() -> None:

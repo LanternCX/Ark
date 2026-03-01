@@ -17,7 +17,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from ark.tui.tree_selection import SelectionState, TreeSelectionState, paginate_items
+from src.tui.tree_selection import SelectionState, TreeSelectionState, paginate_items
 
 _TREE_ACTION_HINT = (
     "Enter=select(open/toggle/control), Right=open, Space=toggle, "

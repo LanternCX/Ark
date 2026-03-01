@@ -20,5 +20,7 @@ Mode controls are configured from `Settings -> LLM Settings`:
 
 Ark does not send file content.
 
-Ark credentials are configured in local runtime config (`~/.ark/config.json`) via TUI settings.
+Ark credentials are configured in local runtime config (`<runtime-root>/.ark/config.json`) via TUI settings.
 This includes API keys and Gemini OAuth client/refresh credentials when enabled.
+
+`<runtime-root>` means the directory containing `main.py` (source mode) or the packaged executable (binary mode).

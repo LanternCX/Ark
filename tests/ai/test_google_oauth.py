@@ -1,6 +1,6 @@
 import pytest
 
-from ark.ai.google_oauth import refresh_google_access_token, run_browser_oauth_login
+from src.ai.google_oauth import refresh_google_access_token, run_browser_oauth_login
 
 
 def test_run_browser_oauth_login_requires_client_secrets() -> None:

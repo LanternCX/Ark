@@ -1,4 +1,4 @@
-from ark.tui.llm_catalog import LLM_PROVIDER_GROUPS
+from src.tui.llm_catalog import LLM_PROVIDER_GROUPS
 
 
 def test_each_provider_has_three_recommended_models() -> None:

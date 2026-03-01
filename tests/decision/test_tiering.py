@@ -1,4 +1,4 @@
-from ark.decision.tiering import classify_tier
+from src.decision.tiering import classify_tier
 
 
 def test_classify_tier_routes_low_confidence_to_tier2() -> None:

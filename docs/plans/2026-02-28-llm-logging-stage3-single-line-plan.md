@@ -4,7 +4,7 @@
 
 **Goal:** Update LLM settings probe to send hello and print model response, filter LiteLLM logs effectively, and make Stage3 folder nodes single-line with enter-expand and space-toggle semantics.
 
-**Architecture:** Keep existing Ark pipeline boundaries unchanged. Apply focused changes in `ark/ai/router.py`, `ark/runtime_logging.py`, `ark/tui/main_menu.py`, and `ark/tui/stage3_review.py` with tests first for each behavior. Reuse current tree state/checkpoint logic and only adjust interaction rendering and prompt plumbing.
+**Architecture:** Keep existing Ark pipeline boundaries unchanged. Apply focused changes in `src/ai/router.py`, `src/runtime_logging.py`, `src/tui/main_menu.py`, and `src/tui/stage3_review.py` with tests first for each behavior. Reuse current tree state/checkpoint logic and only adjust interaction rendering and prompt plumbing.
 
 **Tech Stack:** Python 3.10+, typer, questionary, rich, litellm, pytest
 
@@ -14,8 +14,8 @@
 
 **Files:**
 - Modify: `tests/tui/test_main_menu.py`
-- Modify: `ark/ai/router.py`
-- Modify: `ark/tui/main_menu.py`
+- Modify: `src/ai/router.py`
+- Modify: `src/tui/main_menu.py`
 
 **Step 1: Write failing tests**
 - Add assertions that connectivity check sends `hello` semantics and success output includes model reply message.
@@ -34,7 +34,7 @@
 
 **Files:**
 - Modify: `tests/test_runtime_logging.py`
-- Modify: `ark/runtime_logging.py`
+- Modify: `src/runtime_logging.py`
 
 **Step 1: Write failing tests**
 - Assert dependency logger align helpers exist and apply target levels to `LiteLLM` and child loggers.
@@ -53,7 +53,7 @@
 
 **Files:**
 - Modify: `tests/tui/test_stage3_tree_flow.py`
-- Modify: `ark/tui/stage3_review.py`
+- Modify: `src/tui/stage3_review.py`
 
 **Step 1: Write failing tests**
 - Assert one folder row per directory in choices.

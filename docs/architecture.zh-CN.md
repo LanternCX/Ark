@@ -8,25 +8,28 @@ Ark 采用单向依赖：
 
 `collector/signals/ai -> decision -> tui/backup -> cli`
 
-- `ark/collector/*`：文件发现与元数据采集。
-- `ark/signals/*`：本地启发式评分。
-- `ark/ai/*`：模型分批、路由、认证集成。
-- `ark/decision/*`：分级决策逻辑。
-- `ark/tui/*`：交互与人工审核。
-- `ark/backup/*`：镜像复制执行。
-- `ark/cli.py`：仅负责入口与装配。
+- `src/collector/*`：文件发现与元数据采集。
+- `src/signals/*`：本地启发式评分。
+- `src/ai/*`：模型分批、路由、认证集成。
+- `src/decision/*`：分级决策逻辑。
+- `src/tui/*`：交互与人工审核。
+- `src/backup/*`：镜像复制执行。
+- `main.py`：源码运行入口。
+- `src/cli.py`：Typer 应用装配与运行编排入口。
 
 ## 2. 运行时流程
 
-1. `ark` 进入主菜单。
+1. `python3 main.py`（或打包可执行文件 / 已安装 `ark`）进入主菜单。
 2. 用户在 `Backup Settings` 与 `LLM Settings` 修改参数。
-3. 参数通过 `JSONConfigStore` 持久化到 `~/.ark/config.json`。
-4. `Execute Backup` 调用 `ark/pipeline/run_backup.py` 执行分阶段流程。
+3. 参数通过 `JSONConfigStore` 持久化到 `<运行目录>/.ark/config.json`。
+4. `Execute Backup` 调用 `src/pipeline/run_backup.py` 执行分阶段流程。
 5. Stage 1 按后缀类别分层筛选。
 6. Stage 1/2/3 产出最终选择路径。
 7. Stage 3 使用树形分页 + 三态选择 + 图案化交互。
 8. 非 dry run 时由 `backup.executor` 执行镜像复制。
-9. 运行态检查点写入 `~/.ark/state/backup_runs`，支持中断恢复。
+9. 运行态检查点写入 `<运行目录>/.ark/state/backup_runs`，支持中断恢复。
+
+`<运行目录>` 指源码模式下 `main.py` 所在目录，或打包模式下可执行文件所在目录。
 
 ## 3. 配置模型
 

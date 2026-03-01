@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from ark.pipeline import run_backup as run_backup_module
-from ark.pipeline.run_backup import run_backup_pipeline
+from src.pipeline import run_backup as run_backup_module
+from src.pipeline.run_backup import run_backup_pipeline
 
 
 def test_run_backup_pipeline_uses_stage_reviews() -> None:

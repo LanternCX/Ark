@@ -1,6 +1,6 @@
 from prompt_toolkit.keys import Keys
 
-import ark.tui.stage3_review as stage3_review
+import src.tui.stage3_review as stage3_review
 
 
 def test_default_action_prompt_registers_eager_exit_bindings(monkeypatch) -> None:

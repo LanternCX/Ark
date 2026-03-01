@@ -4,7 +4,7 @@
 
 **Goal:** Add paginated tree-based final selection with folder tri-state behavior, and add AI-driven suffix/path recommendation controls including optional full-path payloads.
 
-**Architecture:** Keep pipeline boundaries unchanged (`collector/signals/ai -> decision -> tui/backup -> cli`). Add pure tree-selection state helpers in `ark/tui/tree_selection.py`, keep `ark/tui/stage3_review.py` as interaction layer, and extend pipeline orchestration with injectable recommendation functions.
+**Architecture:** Keep pipeline boundaries unchanged (`collector/signals/ai -> decision -> tui/backup -> cli`). Add pure tree-selection state helpers in `src/tui/tree_selection.py`, keep `src/tui/stage3_review.py` as interaction layer, and extend pipeline orchestration with injectable recommendation functions.
 
 **Tech Stack:** Python 3.10+, typer, questionary, rich, litellm, pytest
 

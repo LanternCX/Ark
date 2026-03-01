@@ -8,25 +8,28 @@ Ark enforces one-way dependencies:
 
 `collector/signals/ai -> decision -> tui/backup -> cli`
 
-- `ark/collector/*`: file discovery and metadata extraction.
-- `ark/signals/*`: local heuristic scoring.
-- `ark/ai/*`: model batching/router/auth integration.
-- `ark/decision/*`: tier decision logic.
-- `ark/tui/*`: user interaction and review.
-- `ark/backup/*`: mirror copy execution.
-- `ark/cli.py`: entrypoint wiring only.
+- `src/collector/*`: file discovery and metadata extraction.
+- `src/signals/*`: local heuristic scoring.
+- `src/ai/*`: model batching/router/auth integration.
+- `src/decision/*`: tier decision logic.
+- `src/tui/*`: user interaction and review.
+- `src/backup/*`: mirror copy execution.
+- `main.py`: source-run entrypoint.
+- `src/cli.py`: Typer app wiring and runtime orchestration entry.
 
 ## 2. Runtime Flow
 
-1. `ark` enters TUI main menu.
+1. `python3 main.py` (or packaged binary / installed `ark`) enters TUI main menu.
 2. User edits settings in `Backup Settings` and `LLM Settings`.
-3. Settings persist to `~/.ark/config.json` via `JSONConfigStore`.
-4. `Execute Backup` runs staged pipeline in `ark/pipeline/run_backup.py`.
+3. Settings persist to `<runtime-root>/.ark/config.json` via `JSONConfigStore`.
+4. `Execute Backup` runs staged pipeline in `src/pipeline/run_backup.py`.
 5. Stage 1 groups suffixes by category buckets for layered decisions.
 6. Stage 1/2/3 decisions produce final selected paths.
 7. Stage 3 uses paginated tree navigation with tri-state folder selection and symbol-first UI controls.
 8. `backup.executor` mirrors selected files unless dry run.
-9. Runtime checkpoints persist resumable progress under `~/.ark/state/backup_runs`.
+9. Runtime checkpoints persist resumable progress under `<runtime-root>/.ark/state/backup_runs`.
+
+`<runtime-root>` means the directory containing `main.py` (source mode) or the packaged executable (binary mode).
 
 ## 3. Configuration Model
 

@@ -5,10 +5,10 @@ from collections.abc import Callable
 import questionary
 import typer
 
-from ark.ai.google_oauth import run_browser_oauth_login
-from ark.ai.router import check_llm_connectivity
-from ark.pipeline.config import PipelineConfig
-from ark.tui.llm_catalog import (
+from src.ai.google_oauth import run_browser_oauth_login
+from src.ai.router import check_llm_connectivity
+from src.pipeline.config import PipelineConfig
+from src.tui.llm_catalog import (
     LLM_PROVIDER_GROUPS,
     LLMProviderPreset,
     find_provider_group,

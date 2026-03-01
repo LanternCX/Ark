@@ -1,8 +1,8 @@
 from typer.testing import CliRunner
 import typer
 
-import ark.cli as cli_module
-from ark.cli import app
+import src.cli as cli_module
+from src.cli import app
 
 
 def test_ark_root_command_smoke(monkeypatch) -> None:

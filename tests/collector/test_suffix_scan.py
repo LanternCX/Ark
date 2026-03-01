@@ -1,4 +1,4 @@
-from ark.collector.scanner import collect_suffix_summary
+from src.collector.scanner import collect_suffix_summary
 
 
 def test_collect_suffix_summary_deduplicates_extensions(tmp_path) -> None:

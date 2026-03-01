@@ -93,7 +93,7 @@ Rules:
 ## Code Style Guidelines
 
 ### Imports
-- Use absolute imports rooted at `ark`.
+- Use absolute imports rooted at `src`.
 - Group imports: standard library, third-party, local package.
 - Prefer explicit imports; avoid wildcard imports.
 - Avoid import-time side effects.
@@ -125,9 +125,9 @@ Rules:
 - Never silently swallow exceptions.
 
 ### CLI/TUI Conventions
-- Keep `ark/cli.py` thin (argument parsing and command wiring only).
-- Place orchestration in pipeline modules such as `ark/pipeline/run_backup.py`.
-- Keep TUI behavior and prompts in `ark/tui/*` using `questionary + rich`.
+- Keep `src/cli.py` thin (argument parsing and command wiring only).
+- Place orchestration in pipeline modules such as `src/pipeline/run_backup.py`.
+- Keep TUI behavior and prompts in `src/tui/*` using `questionary + rich`.
 
 ## Testing Expectations
 - Prefer TDD for features and bug fixes.

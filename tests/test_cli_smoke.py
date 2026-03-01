@@ -1,9 +1,9 @@
 from typer.testing import CliRunner
 from pathlib import Path
 
-import ark.cli as cli_module
-from ark.cli import app
-from ark.pipeline.config import PipelineConfig
+import src.cli as cli_module
+from src.cli import app
+from src.pipeline.config import PipelineConfig
 
 
 def test_cli_help_contains_ark_description() -> None:
@@ -26,6 +26,69 @@ def test_cli_root_invokes_main_menu_flow(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert invoked is True
+
+
+def test_run_main_menu_flow_uses_runtime_local_config_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    observed: dict[str, object] = {}
+
+    class FakeStore:
+        def __init__(self, file_path: Path):
+            observed["config_path"] = file_path
+
+        def load(self) -> PipelineConfig:
+            return PipelineConfig()
+
+        def save(self, _config: PipelineConfig) -> None:
+            return None
+
+    monkeypatch.setenv("ARK_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli_module, "setup_runtime_logging", lambda _level: None)
+    monkeypatch.setattr(cli_module, "JSONConfigStore", FakeStore)
+    monkeypatch.setattr(
+        cli_module,
+        "run_main_menu",
+        lambda config, save_config, execute_backup: None,
+    )
+
+    cli_module.run_main_menu_flow()
+
+    assert observed["config_path"] == tmp_path / ".ark" / "config.json"
+
+
+def test_execute_backup_uses_runtime_local_backup_store_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    observed: dict[str, object] = {}
+
+    class FakeStore:
+        def __init__(self, root_dir: Path):
+            observed["run_store_path"] = root_dir
+
+        def find_latest_resumable(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return None
+
+        def create_run(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return "run-1"
+
+        def append_event(self, run_id, stage, event, payload):
+            del run_id, stage, event, payload
+
+        def mark_status(self, run_id, status):
+            del run_id, status
+
+    monkeypatch.setenv("ARK_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli_module, "BackupRunStore", FakeStore)
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", lambda **_kwargs: ["ok"])
+
+    cli_module._execute_backup(
+        PipelineConfig(target="~/backup", source_roots=["~/Code"], dry_run=True)
+    )
+
+    assert observed["run_store_path"] == tmp_path / ".ark" / "state" / "backup_runs"
 
 
 def test_execute_backup_expands_user_paths(monkeypatch) -> None:

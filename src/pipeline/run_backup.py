@@ -4,18 +4,18 @@ import os
 from pathlib import Path
 from typing import Callable
 
-from ark.backup.executor import mirror_copy_one
-from ark.decision.tiering import classify_tier
-from ark.rules.local_rules import (
+from src.backup.executor import mirror_copy_one
+from src.decision.tiering import classify_tier
+from src.rules.local_rules import (
     build_scan_pathspec,
     hard_drop_suffixes,
     keep_suffixes,
     should_ignore_relpath,
 )
-from ark.state.backup_run_store import BackupRunStore
-from ark.signals.extractor import extension_score
-from ark.tui.stage1_review import SuffixReviewRow, run_stage1_review
-from ark.tui.stage3_review import PathReviewRow, run_stage3_review
+from src.state.backup_run_store import BackupRunStore
+from src.signals.extractor import extension_score
+from src.tui.stage1_review import SuffixReviewRow, run_stage1_review
+from src.tui.stage3_review import PathReviewRow, run_stage3_review
 
 HARD_DROP_SUFFIXES = hard_drop_suffixes()
 

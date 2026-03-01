@@ -32,7 +32,7 @@ dev = [
 ]
 
 [project.scripts]
-ark = "ark.cli:main"
+ark = "src.cli:main"
 
 [tool.pytest.ini_options]
 addopts = "-q"

@@ -1,6 +1,6 @@
-import ark.pipeline.run_backup as run_backup_module
-from ark.pipeline.run_backup import run_backup_pipeline
-from ark.state.backup_run_store import BackupRunStore
+import src.pipeline.run_backup as run_backup_module
+from src.pipeline.run_backup import run_backup_pipeline
+from src.state.backup_run_store import BackupRunStore
 
 
 def test_run_backup_pipeline_executes_mirror_copy_for_selected_paths(tmp_path) -> None:

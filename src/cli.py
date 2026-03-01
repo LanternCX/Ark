@@ -7,22 +7,26 @@ from typing import Callable
 import questionary
 import typer
 
-from ark.ai.decision_client import (
+from src.ai.decision_client import (
     llm_directory_decision,
     llm_path_risk,
     llm_suffix_risk,
 )
-from ark.pipeline.config import PipelineConfig
-from ark.pipeline.run_backup import run_backup_pipeline
-from ark.runtime_logging import setup_runtime_logging
-from ark.state.backup_run_store import BackupRunStore
-from ark.state.config_store import JSONConfigStore
-from ark.tui.main_menu import run_main_menu
-from ark.tui.stage1_review import SuffixReviewRow
-from ark.tui.stage3_review import PathReviewRow
+from src.pipeline.config import PipelineConfig
+from src.pipeline.run_backup import run_backup_pipeline
+from src.runtime_paths import (
+    get_runtime_backup_runs_dir,
+    get_runtime_config_path,
+)
+from src.runtime_logging import setup_runtime_logging
+from src.state.backup_run_store import BackupRunStore
+from src.state.config_store import JSONConfigStore
+from src.tui.main_menu import run_main_menu
+from src.tui.stage1_review import SuffixReviewRow
+from src.tui.stage3_review import PathReviewRow
 
 app = typer.Typer(help="Ark backup agent")
-logger = logging.getLogger("ark.cli")
+logger = logging.getLogger("src.cli")
 
 RECOVERY_RESUME = "Resume latest checkpoint"
 RECOVERY_RESTART = "Start new run (keep old)"
@@ -39,7 +43,7 @@ def root(ctx: typer.Context) -> None:
 def run_main_menu_flow() -> None:
     """Load persisted config and start interactive main menu."""
     setup_runtime_logging("INFO")
-    store = JSONConfigStore(Path.home() / ".ark" / "config.json")
+    store = JSONConfigStore(get_runtime_config_path())
     config = store.load()
 
     run_main_menu(
@@ -57,7 +61,7 @@ def _execute_backup(
     stage3_review_fn = _non_interactive_stage3 if config.non_interactive else None
     source_roots = [Path(item).expanduser().resolve() for item in config.source_roots]
     target = str(Path(config.target).expanduser().resolve())
-    run_store = BackupRunStore(Path.home() / ".ark" / "state" / "backup_runs")
+    run_store = BackupRunStore(get_runtime_backup_runs_dir())
     resume_candidate = run_store.find_latest_resumable(
         target=target,
         source_roots=[str(item) for item in source_roots],

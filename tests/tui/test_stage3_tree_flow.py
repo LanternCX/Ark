@@ -2,7 +2,7 @@ from rich.console import Console
 import threading
 import time
 
-from ark.tui.stage3_review import PathReviewRow, run_stage3_review
+from src.tui.stage3_review import PathReviewRow, run_stage3_review
 
 
 def test_run_stage3_review_supports_tree_navigation_and_directory_toggle() -> None:

@@ -1,4 +1,4 @@
-import ark.ai.router as router_module
+import src.ai.router as router_module
 
 
 def test_classify_batch_uses_google_sdk_for_gemini_oauth(monkeypatch) -> None:

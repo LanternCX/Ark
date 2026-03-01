@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Protocol
 
-from ark.models import Session
+from src.models import Session
 
 
 class StateStore(Protocol):

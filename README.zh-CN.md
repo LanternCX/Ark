@@ -4,7 +4,13 @@ Ark 是一个用于系统迁移和重装准备的 AI 辅助备份工具。
 
 ## 快速开始
 
-使用一个命令启动：
+源码模式下无需安装到系统环境，直接运行：
+
+```bash
+python3 main.py
+```
+
+可选（已安装时）：
 
 ```bash
 ark
@@ -18,12 +24,25 @@ Ark 会进入一级 TUI 菜单：
 
 所有运行参数都在 TUI 中配置，并会本地持久化。
 
-配置文件路径：`~/.ark/config.json`
+配置文件路径：`<运行目录>/.ark/config.json`
+
+`<运行目录>` 定义：
+
+- 源码运行：`main.py` 所在目录
+- 打包运行：可执行文件所在目录
 
 ## 开发文档
 
 - 架构说明：`docs/architecture.zh-CN.md`
 - Google OAuth 配置指南（Gemini）：`docs/google-oauth-setup.zh-CN.md`
+
+## 发布打包
+
+- GitHub Actions 发布流程会同时构建 `windows-x64` 与 `macos-arm64` 产物。
+- 每个发布包都会带上运行目录内的默认文件：
+  - `.ark/config.json`
+  - `src/rules/baseline.ignore`
+  - `src/rules/suffix_rules.toml`
 
 ## TUI 阶段说明
 
@@ -33,7 +52,7 @@ Ark 会进入一级 TUI 菜单：
 
 1. `Settings`
    - 作用：配置备份参数和 LiteLLM 参数。
-   - 后果：配置会保存到 `~/.ark/config.json`，下次启动自动复用。
+   - 后果：配置会保存到 `<运行目录>/.ark/config.json`，下次启动自动复用。
    - 建议：首次使用先完成设置，再执行备份。
 2. `Execute Backup`
    - 作用：执行完整分阶段备份流程。
@@ -107,7 +126,7 @@ Ark 会进入一级 TUI 菜单：
   - 建议：在设置阶段完成授权，避免执行时中断。
 - `LLM API key`
   - 作用：用于调用平台鉴权。
-  - 后果：密钥错误会认证失败；密钥会保存到 `~/.ark/config.json`。
+  - 后果：密钥错误会认证失败；密钥会保存到 `<运行目录>/.ark/config.json`。
   - 建议：使用专用密钥并设置额度上限。
 - `Use AI suffix risk classification?`
   - 作用：让 AI 后缀风险标签影响 Stage 1 默认后缀选择。
@@ -138,7 +157,7 @@ Ark 会进入一级 TUI 菜单：
    - 建议：不确定时偏保守，避免过度过滤。
    - UI：后缀按类别分组展示（Document/Image/Code/Archive/Media/Executable/Temp/Cache/Other）。
    - AI 模式：当启用 LLM 时，后缀 keep/drop/not_sure 默认值由远程 LLM 分类生成，失败时自动回退本地策略。
-   - 本地规则模式：扫描与后缀分类基线来自规则文件（`ark/rules/baseline.ignore`、`ark/rules/suffix_rules.toml`），不再在代码里写死列表。
+   - 本地规则模式：扫描与后缀分类基线来自规则文件（`src/rules/baseline.ignore`、`src/rules/suffix_rules.toml`），不再在代码里写死列表。
 2. `Stage 2: Path Tiering`
    - 作用：结合本地信号和 AI 语义做路径分级。
    - 后果：分级结果影响最终候选优先级。
@@ -166,7 +185,7 @@ Ark 会进入一级 TUI 菜单：
 
 ### 可恢复执行
 
-- 备份运行过程会在 `~/.ark/state/backup_runs/` 下持续保存检查点。
+- 备份运行过程会在 `<运行目录>/.ark/state/backup_runs/` 下持续保存检查点。
 - 如果发现匹配的未完成运行，会提供三选一恢复菜单：
   - `Resume latest`
   - `Restart new`
@@ -179,14 +198,14 @@ Ark 会进入一级 TUI 菜单：
   - 当前扫描根目录/目录
   - 当前 AI 批处理状态
   - 当前文件复制进度
-- 运行日志写入 `~/.ark/logs/ark.log`（轮转文件）。
-- 每次运行的结构化事件写入 `~/.ark/state/backup_runs/<run_id>.events.jsonl`。
+- 运行日志写入 `<运行目录>/.ark/logs/ark.log`（轮转文件）。
+- 每次运行的结构化事件写入 `<运行目录>/.ark/state/backup_runs/<run_id>.events.jsonl`。
 - LiteLLM 依赖日志会做噪音过滤，控制台优先保留有效告警信息。
 
 ### 规则文件
 
-- `ark/rules/baseline.ignore`：扫描阶段使用的开源风格 gitignore 基线规则。
-- `ark/rules/suffix_rules.toml`：Stage 1 使用的后缀分类与 hard-drop/keep 默认规则。
+- `src/rules/baseline.ignore`：扫描阶段使用的开源风格 gitignore 基线规则。
+- `src/rules/suffix_rules.toml`：Stage 1 使用的后缀分类与 hard-drop/keep 默认规则。
 - 每个 source root 下的 `.gitignore` 与可选 `.arkignore` 会在扫描时与基线规则合并。
 
 ### 首次使用建议流程
