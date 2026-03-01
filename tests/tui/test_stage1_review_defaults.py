@@ -9,6 +9,7 @@ import src.tui.stage1_review as stage1_review
 from src.tui.stage1_review import (
     SuffixReviewRow,
     _default_checkbox_prompt,
+    _marker_for_state,
     apply_default_selection,
     classify_suffix_category,
     flatten_grouped_suffix_choices,
@@ -218,3 +219,56 @@ def test_classify_suffix_category_assigns_expected_buckets() -> None:
     assert classify_suffix_category(".pdf") == "Document"
     assert classify_suffix_category(".jpg") == "Image"
     assert classify_suffix_category(".tmp") == "Temp/Cache"
+
+
+def test_marker_for_state_uses_symbolic_semantics() -> None:
+    assert _marker_for_state(selected_count=0, total_count=2) == "\u25cb"
+    assert _marker_for_state(selected_count=1, total_count=2) == "\u25d0"
+    assert _marker_for_state(selected_count=2, total_count=2) == "\u25cf"
+
+
+def test_run_stage1_review_uses_symbolic_category_and_suffix_rows() -> None:
+    rows = [
+        SuffixReviewRow(
+            ext=".pdf",
+            label="keep",
+            tag="document",
+            confidence=0.95,
+            reason="doc",
+        ),
+        SuffixReviewRow(
+            ext=".tmp",
+            label="drop",
+            tag="cache",
+            confidence=0.2,
+            reason="temp",
+        ),
+    ]
+
+    captured: dict[str, list[dict]] = {}
+
+    def fake_checkbox(
+        _message: str, choices: list[dict], default: list[str]
+    ) -> list[str]:
+        captured["choices"] = choices
+        return default
+
+    run_stage1_review(
+        rows,
+        threshold=0.8,
+        checkbox_prompt=fake_checkbox,
+        console=Console(record=True),
+    )
+
+    category_row = next(
+        item
+        for item in captured["choices"]
+        if str(item["value"]).startswith("category::")
+    )
+    suffix_row = next(item for item in captured["choices"] if item["value"] == ".pdf")
+
+    assert "\U0001f4c1" in str(category_row["name"])
+    assert "\U0001f4c4" in str(suffix_row["name"])
+    assert any(
+        symbol in str(category_row["name"]) for symbol in ("\u25cb", "\u25d0", "\u25cf")
+    )

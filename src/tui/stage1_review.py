@@ -108,6 +108,90 @@ def apply_default_selection(rows: list[dict], threshold: float) -> set[str]:
     return selected
 
 
+def _marker_for_state(selected_count: int, total_count: int) -> str:
+    """Map selection coverage to symbolic marker style."""
+    if total_count <= 0 or selected_count <= 0:
+        return "○"
+    if selected_count >= total_count:
+        return "●"
+    return "◐"
+
+
+def _format_category_choice_name(
+    category_name: str,
+    selected_count: int,
+    total_count: int,
+) -> str:
+    """Render category row with symbolic marker and folder icon."""
+    marker = _marker_for_state(selected_count=selected_count, total_count=total_count)
+    return f"▸ {marker} 📁 {category_name}/ ({total_count})"
+
+
+def _format_suffix_choice_name(
+    ext: str,
+    label: str,
+    confidence: float,
+    reason: str,
+    selected: bool,
+) -> str:
+    """Render suffix row with symbolic marker and file icon."""
+    marker = _marker_for_state(selected_count=1 if selected else 0, total_count=1)
+    return f"  {marker} 📄 {ext:8} {label:4} conf={confidence:.2f} {reason}"
+
+
+def _build_category_children(choices: list[dict]) -> dict[str, set[str]]:
+    """Build category to child suffix mapping from prompt choices."""
+    category_children: dict[str, set[str]] = {}
+    for item in choices:
+        value = str(item["value"])
+        if not value.startswith("category::"):
+            continue
+        children = {str(child) for child in item.get("children", [])}
+        category_children[value] = children
+    return category_children
+
+
+def _refresh_choice_names(
+    choices: list[dict],
+    selected_values: set[str],
+    category_children: dict[str, set[str]],
+) -> None:
+    """Refresh category and suffix labels using current selection state."""
+    for item in choices:
+        value = str(item["value"])
+        if value.startswith("category::"):
+            category_name = str(item.get("category_name") or value.split("::", 1)[1])
+            children = category_children.get(value, set())
+            selected_count = len(children & selected_values)
+            item["name"] = _format_category_choice_name(
+                category_name=category_name,
+                selected_count=selected_count,
+                total_count=len(children),
+            )
+            continue
+
+        if str(item.get("kind", "")) == "suffix":
+            ext = str(item.get("ext", value))
+            label = str(item.get("label", ""))
+            confidence = float(item.get("confidence", 0.0))
+            reason = str(item.get("reason", ""))
+            item["name"] = _format_suffix_choice_name(
+                ext=ext,
+                label=label,
+                confidence=confidence,
+                reason=reason,
+                selected=value in selected_values,
+            )
+            continue
+
+        base_name = str(item.setdefault("raw_name", item.get("name", value)))
+        marker = _marker_for_state(
+            selected_count=1 if value in selected_values else 0,
+            total_count=1,
+        )
+        item["name"] = f"{marker} {base_name}"
+
+
 def render_stage1_table(
     rows: list[SuffixReviewRow], console: Console | None = None
 ) -> None:
@@ -158,17 +242,23 @@ def run_stage1_review(
         category_value = f"category::{category}"
         choices.append(
             {
-                "name": f"[{category}] ({len(suffixes)})",
+                "name": "",
                 "value": category_value,
                 "children": suffixes,
+                "category_name": category,
             }
         )
         for row in grouped[category]:
             choices.append(
                 {
-                    "name": f"  {row.ext:8} {row.label:4} conf={row.confidence:.2f} {row.reason}",
+                    "name": "",
                     "value": row.ext,
                     "category": category_value,
+                    "kind": "suffix",
+                    "ext": row.ext,
+                    "label": row.label,
+                    "confidence": row.confidence,
+                    "reason": row.reason,
                 }
             )
 
@@ -178,10 +268,13 @@ def run_stage1_review(
         if category in grouped
         and all(item.ext in defaults for item in grouped[category])
     ]
+    initial_selected = set(defaults + category_defaults)
+    category_children = _build_category_children(choices)
+    _refresh_choice_names(choices, initial_selected, category_children)
     selected = prompt_fn(
         "Suffix whitelist selection",
         choices,
-        sorted(set(defaults + category_defaults)),
+        sorted(initial_selected),
     )
 
     selected_set = {str(item) for item in selected}
@@ -202,20 +295,17 @@ def _default_checkbox_prompt(
     if not choices:
         return []
 
-    values = [(str(item["value"]), str(item["name"])) for item in choices]
-    valid_values = {value for value, _ in values}
-    category_children: dict[str, set[str]] = {}
+    category_children = _build_category_children(choices)
     suffix_category: dict[str, str] = {}
     for item in choices:
         value = str(item["value"])
         if value.startswith("category::"):
-            children = {str(child) for child in item.get("children", [])}
-            category_children[value] = children
             continue
         category_value = str(item.get("category", ""))
         if category_value.startswith("category::"):
             suffix_category[value] = category_value
 
+    valid_values = {str(item["value"]) for item in choices}
     initial_selected = {value for value in default if value in valid_values}
     for category_value, children in category_children.items():
         if category_value in initial_selected:
@@ -224,6 +314,9 @@ def _default_checkbox_prompt(
             initial_selected.add(category_value)
         else:
             initial_selected.discard(category_value)
+
+    _refresh_choice_names(choices, initial_selected, category_children)
+    values = [(str(item["value"]), str(item["name"])) for item in choices]
 
     checkbox = CheckboxList(
         values=values,
@@ -234,6 +327,7 @@ def _default_checkbox_prompt(
 
     @kb.add(" ", eager=True)
     def _on_space(event) -> None:  # type: ignore[no-untyped-def]
+        nonlocal values
         del event
         value = _checkbox_cursor_value(checkbox, values)
         selected = set(checkbox.current_values)
@@ -259,6 +353,15 @@ def _default_checkbox_prompt(
                 else:
                     selected.discard(parent_category)
 
+        for category_value, children in category_children.items():
+            if children and children.issubset(selected):
+                selected.add(category_value)
+            else:
+                selected.discard(category_value)
+
+        _refresh_choice_names(choices, selected, category_children)
+        values = [(str(item["value"]), str(item["name"])) for item in choices]
+        checkbox.values = values
         checkbox.current_values = [item for item, _ in values if item in selected]
 
     @kb.add("enter", eager=True)
