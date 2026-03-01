@@ -126,6 +126,9 @@ def _execute_backup(
     def suffix_risk_dispatch(exts: list[str]) -> dict[str, dict[str, object]]:
         if not config.ai_suffix_enabled:
             return {}
+        if config.dry_run:
+            progress_emit("[ai:fallback] suffix local heuristic (dry run)")
+            return _heuristic_suffix_risk(exts)
         if not config.llm_enabled:
             return _heuristic_suffix_risk(exts)
         try:
@@ -142,6 +145,9 @@ def _execute_backup(
     def path_risk_dispatch(paths: list[str]) -> dict[str, dict[str, object]]:
         if not config.ai_path_enabled:
             return {}
+        if config.dry_run:
+            progress_emit("[ai:fallback] path local heuristic (dry run)")
+            return _heuristic_path_risk(paths)
         if not config.llm_enabled:
             return _heuristic_path_risk(paths)
         try:
@@ -154,6 +160,12 @@ def _execute_backup(
     def directory_decision_dispatch(
         directory: str, child_directories: list[str], sample_files: list[str]
     ) -> dict[str, object]:
+        if config.dry_run:
+            return {
+                "decision": "not_sure",
+                "confidence": 0.0,
+                "reason": "dry_run",
+            }
         if not config.llm_enabled or not config.ai_path_enabled:
             return {"decision": "not_sure", "confidence": 0.0, "reason": "disabled"}
         try:

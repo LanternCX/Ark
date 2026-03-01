@@ -251,11 +251,30 @@ def test_execute_backup_allows_discard_when_resumable_run_exists(monkeypatch) ->
 def test_execute_backup_uses_llm_dispatch_when_enabled(monkeypatch) -> None:
     observed: dict[str, object] = {}
 
+    class FakeStore:
+        def __init__(self, _path):
+            pass
+
+        def find_latest_resumable(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return None
+
+        def create_run(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return "run-1"
+
+        def append_event(self, run_id, stage, event, payload):
+            del run_id, stage, event, payload
+
+        def mark_status(self, run_id, status):
+            del run_id, status
+
     def fake_run_backup_pipeline(**kwargs):
         observed.update(kwargs)
         return ["ok"]
 
     monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+    monkeypatch.setattr(cli_module, "BackupRunStore", FakeStore)
     monkeypatch.setattr(
         cli_module,
         "llm_suffix_risk",
@@ -276,7 +295,7 @@ def test_execute_backup_uses_llm_dispatch_when_enabled(monkeypatch) -> None:
     config = PipelineConfig(
         target="~/backup",
         source_roots=["~/Code"],
-        dry_run=True,
+        dry_run=False,
         llm_enabled=True,
         llm_provider="openai",
         llm_model="openai/gpt-4.1-mini",
@@ -291,6 +310,95 @@ def test_execute_backup_uses_llm_dispatch_when_enabled(monkeypatch) -> None:
     path_result = observed["path_risk_fn"](["/tmp/a.txt"])
     assert suffix_result[".pdf"]["reason"] == "ai"
     assert path_result["/tmp/a.txt"]["reason"] == "ai"
+
+
+def test_execute_backup_dry_run_uses_local_heuristics_without_remote_llm(
+    monkeypatch,
+) -> None:
+    observed: dict[str, object] = {}
+    llm_calls = {"suffix": 0, "path": 0, "dir": 0}
+
+    class FakeStore:
+        def __init__(self, _path):
+            pass
+
+        def find_latest_resumable(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return None
+
+        def create_run(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return "run-1"
+
+        def append_event(self, run_id, stage, event, payload):
+            del run_id, stage, event, payload
+
+        def mark_status(self, run_id, status):
+            del run_id, status
+
+    def fake_run_backup_pipeline(**kwargs):
+        observed.update(kwargs)
+        return ["ok"]
+
+    def fake_llm_suffix_risk(exts, **_kwargs):
+        llm_calls["suffix"] += 1
+        return {
+            ext: {"risk": "high_value", "confidence": 1.0, "reason": "ai"}
+            for ext in exts
+        }
+
+    def fake_llm_path_risk(paths, **_kwargs):
+        llm_calls["path"] += 1
+        return {
+            path: {
+                "risk": "neutral",
+                "score": 0.5,
+                "confidence": 1.0,
+                "reason": "ai",
+            }
+            for path in paths
+        }
+
+    def fake_llm_directory_decision(_directory, _children, _samples, **_kwargs):
+        llm_calls["dir"] += 1
+        return {"decision": "keep", "confidence": 1.0, "reason": "ai"}
+
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+    monkeypatch.setattr(cli_module, "BackupRunStore", FakeStore)
+    monkeypatch.setattr(cli_module, "llm_suffix_risk", fake_llm_suffix_risk)
+    monkeypatch.setattr(cli_module, "llm_path_risk", fake_llm_path_risk)
+    monkeypatch.setattr(
+        cli_module,
+        "llm_directory_decision",
+        fake_llm_directory_decision,
+    )
+
+    config = PipelineConfig(
+        target="~/backup",
+        source_roots=["~/Code"],
+        dry_run=True,
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="openai/gpt-4.1-mini",
+        llm_api_key="sk-test",
+        ai_suffix_enabled=True,
+        ai_path_enabled=True,
+    )
+
+    cli_module._execute_backup(config)
+
+    suffix_result = observed["suffix_risk_fn"]([".pdf", ".tmp"])
+    path_result = observed["path_risk_fn"](
+        ["/tmp/cache.tmp", "/Users/me/Documents/a.txt"]
+    )
+    dir_result = observed["directory_decision_fn"]("/Users/me", [], [])
+
+    assert llm_calls == {"suffix": 0, "path": 0, "dir": 0}
+    assert suffix_result[".pdf"]["reason"] != "ai"
+    assert suffix_result[".tmp"]["risk"] == "low_value"
+    assert path_result["/tmp/cache.tmp"]["risk"] == "low_value"
+    assert path_result["/Users/me/Documents/a.txt"]["risk"] == "high_value"
+    assert dir_result["decision"] == "not_sure"
 
 
 def test_execute_backup_falls_back_to_heuristic_when_llm_parse_fails(
