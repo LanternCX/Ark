@@ -7,6 +7,22 @@ from src.pipeline.config import PipelineConfig
 from src.state.base import ensure_parent_exists
 
 
+def _coerce_bool(value: object, default: bool) -> bool:
+    """Parse bool-like config values with string compatibility."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", ""}:
+            return False
+        return default
+    if isinstance(value, int):
+        return value != 0
+    return default
+
+
 class JSONConfigStore:
     """Persist and load pipeline configuration from a JSON file."""
 
@@ -23,9 +39,9 @@ class JSONConfigStore:
         return PipelineConfig(
             target=str(payload.get("target", "")),
             source_roots=list(payload.get("source_roots", [])),
-            dry_run=bool(payload.get("dry_run", False)),
-            non_interactive=bool(payload.get("non_interactive", False)),
-            llm_enabled=bool(payload.get("llm_enabled", False)),
+            dry_run=_coerce_bool(payload.get("dry_run"), False),
+            non_interactive=_coerce_bool(payload.get("non_interactive"), False),
+            llm_enabled=_coerce_bool(payload.get("llm_enabled"), False),
             llm_provider_group=str(payload.get("llm_provider_group", "")),
             llm_provider=str(payload.get("llm_provider", "")),
             llm_model=str(payload.get("llm_model", "")),
@@ -35,9 +51,12 @@ class JSONConfigStore:
             google_client_id=str(payload.get("google_client_id", "")),
             google_client_secret=str(payload.get("google_client_secret", "")),
             google_refresh_token=str(payload.get("google_refresh_token", "")),
-            ai_suffix_enabled=bool(payload.get("ai_suffix_enabled", True)),
-            ai_path_enabled=bool(payload.get("ai_path_enabled", True)),
-            send_full_path_to_ai=bool(payload.get("send_full_path_to_ai", False)),
+            ai_suffix_enabled=_coerce_bool(payload.get("ai_suffix_enabled"), True),
+            ai_path_enabled=_coerce_bool(payload.get("ai_path_enabled"), True),
+            send_full_path_to_ai=_coerce_bool(
+                payload.get("send_full_path_to_ai"),
+                False,
+            ),
             ai_prune_mode=str(payload.get("ai_prune_mode", "hide_low_value")),
         )
 

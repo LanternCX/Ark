@@ -62,3 +62,33 @@ def test_config_store_returns_default_when_file_missing(tmp_path) -> None:
     assert loaded.ai_path_enabled is True
     assert loaded.send_full_path_to_ai is False
     assert loaded.ai_prune_mode == "hide_low_value"
+
+
+def test_config_store_parses_string_boolean_values_for_backward_compatibility(
+    tmp_path,
+) -> None:
+    store = JSONConfigStore(tmp_path / "config.json")
+    store.file_path.write_text(
+        """
+{
+  "target": "X:/ArkBackup",
+  "source_roots": ["C:/Users/me/Documents"],
+  "dry_run": "false",
+  "non_interactive": "true",
+  "llm_enabled": "false",
+  "ai_suffix_enabled": "true",
+  "ai_path_enabled": "false",
+  "send_full_path_to_ai": "true"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    loaded = store.load()
+
+    assert loaded.dry_run is False
+    assert loaded.non_interactive is True
+    assert loaded.llm_enabled is False
+    assert loaded.ai_suffix_enabled is True
+    assert loaded.ai_path_enabled is False
+    assert loaded.send_full_path_to_ai is True
