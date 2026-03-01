@@ -56,8 +56,8 @@ Every Ark run follows the same end-to-end flow:
 2. **Main menu decision**: choose `Settings` to adjust behavior or `Execute Backup` to run immediately.
 3. **Settings become active**: once saved, updated settings are used by the current run.
 4. **Pre-run validation**: before execution, Ark checks required inputs for your chosen mode (paths, source roots, model/auth data when applicable).
-5. **Three execution stages**: Stage 1 (suffix screening), Stage 2 (path tiering), Stage 3 (final confirmation).
-6. **Write behavior**: with `Dry run = No`, confirmed files are copied; with `Dry run = Yes`, Ark simulates and reports results without file writes, and AI decisions use local heuristics only (no remote LLM requests).
+5. **Two user-visible execution stages**: Stage 1 (suffix screening) and Stage 2 (final review). Internal tiering still runs, but is not shown as a user stage.
+6. **Write behavior**: with `Dry run = No`, files confirmed in Stage 2 are copied; with `Dry run = Yes`, Ark simulates and reports results without file writes, and AI decisions use local heuristics only (no remote LLM requests).
 7. **Resume support**: checkpoints are written continuously so interrupted runs can be resumed.
 
 In short: **configure -> preview -> commit**.
@@ -94,16 +94,17 @@ If LiteLLM is disabled, Ark uses local rules and local heuristics only.
 | `Use AI suffix risk classification?` | AI defaults in Stage 1 | `No`: suffix defaults rely on local logic only. |
 | `Use AI path pruning suggestions?` | AI influence in path selection | `No`: path pruning uses local logic only. |
 | `Send full file paths to AI?` | Data-sharing scope for AI prompts | `No`: minimal metadata mode. `Yes`: includes full path strings. |
-| `Hide low-value branches by default?` | Initial Stage 3 visibility | `Yes`: starts with low-value branches hidden. |
+| `Hide low-value branches by default?` | Initial Stage 2 visibility | `Yes`: starts with low-value branches hidden. |
 | `Test LLM connectivity now?` | Live probe with current settings | Sends a test request and prints immediate success/failure feedback. |
 
 ### Step 3: `Execute Backup`
 
 - `Stage 1: Suffix Screening` builds the first candidate set by file suffix and rule files.
-- `Stage 2: Path Tiering` prioritizes candidates for final review.
-- `Stage 3: Final Review and Backup` lets you confirm final selections before copy.
+- Internal tiering still computes recommendation metadata, but is not shown as a user stage.
+- `Stage 2: Final Review and Backup` includes all scanned files, including files filtered by Stage 1 and files matched by ignore rules.
+- In Stage 2, you can manually select any displayed file for backup.
 
-In Stage 3, use `Enter` to expand folders and `Space` to toggle selection.
+In Stage 2, use `Enter` to expand folders and `Space` to toggle selection.
 
 ### Where each setting takes effect
 
@@ -121,6 +122,11 @@ Ark saves checkpoints under `<runtime-root>/.ark/state/backup_runs/`. On the nex
 - Config: `<runtime-root>/.ark/config.json`
 - Log file: `<runtime-root>/.ark/logs/ark.log`
 - Run checkpoints/events: `<runtime-root>/.ark/state/backup_runs/`
+- Optional runtime AI preference hints: `<runtime-root>/rules.md`
+
+`<runtime-root>/rules.md` is optional plain user-provided preference text.
+When remote LLM calls are active, Ark may include this explicit user-provided text in remote AI prompts as suffix/path/directory preference hints.
+This file does not change output JSON schema contract.
 
 ### Rule sources used in scanning
 
@@ -144,7 +150,11 @@ Ark supports two AI data-sharing modes:
 2. Full path mode (opt-in)
    - full file path strings are sent for suffix/path pruning recommendations
 
-Ark sends no file content.
+No file content means scanned source files being backed up.
+
+Ark may still include explicit user-provided `<runtime-root>/rules.md` text in remote AI prompts when remote LLM calls are active.
+
+`rules.md` remains preference-only guidance and does not relax this boundary.
 
 ## Technology
 

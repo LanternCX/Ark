@@ -24,8 +24,8 @@ Ark 采用单向依赖：
 3. 参数通过 `JSONConfigStore` 持久化到 `<运行目录>/.ark/config.json`。
 4. `Execute Backup` 调用 `src/pipeline/run_backup.py` 执行分阶段流程。
 5. Stage 1 按后缀类别分层筛选。
-6. Stage 1/2/3 产出最终选择路径。
-7. Stage 3 使用树形分页 + 三态选择 + 图案化交互。
+6. Stage 1 后会执行内部路径分层并产出推荐信息，但不会作为用户阶段单独展示。
+7. Stage 2（最终确认）使用树形分页 + 三态选择 + 图案化交互。
 8. 非 dry run 时由 `backup.executor` 执行镜像复制。
 9. 运行态检查点写入 `<运行目录>/.ark/state/backup_runs`，支持中断恢复。
 
@@ -57,15 +57,18 @@ Ark 采用单向依赖：
 AI 分类作用域：
 
 - 后缀风险建议可影响 Stage 1 默认白名单。
-- 路径风险建议可影响 Stage 2 理由与 Stage 3 初始减枝。
-- Stage 3 在最终人工确认前可执行串行目录 DFS AI 决策（`keep/drop/not_sure`）。
+- 路径风险建议可影响内部路径分层理由与 Stage 2 初始减枝。
+- Stage 2 在最终人工确认前可执行串行目录 DFS AI 决策（`keep/drop/not_sure`）。
 - 在 `dry_run` 模式下，AI 调度仅使用本地启发式并跳过远程模型调用。
-- 在配置允许时可发送完整路径字符串；不会发送文件内容。
+- 当远程调用开启时，可选的 `<运行目录>/rules.md` 作为用户明确提供的偏好文本，可能被放入远程 AI 提示中用于后缀/路径/目录阶段参考。
+- `rules.md` 仅影响提示偏好，不改变输出 JSON schema 合同。
+- 在配置允许时可发送完整路径字符串；“不会发送文件内容”指被扫描并准备备份的源文件内容。
 - 扫描减枝与后缀分类默认值来自外部规则文件，并与 AI 决策融合。
+- 最终确认阶段会展示全部扫描文件，包括被 Stage 1 过滤或命中 ignore 规则的文件。
 
 ## 5. 运行态检查点与日志
 
-- Pipeline 支持分阶段检查点（`scan`、`stage1`、`stage2`、`review`、`copy`）。
+- Pipeline 支持分阶段检查点（`scan`、`stage1`、`internal_tiering`、`final_review`、`copy`）。
 - 中断后可基于 run 元信息和检查点 payload 恢复。
 - 运行日志使用 rich 控制台输出 + 轮转文件日志。
 - LiteLLM 依赖日志会统一对齐并过滤到 warning 噪音基线。

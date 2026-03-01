@@ -1,4 +1,4 @@
-"""Tree selection state for stage 3 interactive review."""
+"""Tree selection state for final review interactive selection."""
 
 from __future__ import annotations
 

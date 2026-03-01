@@ -2,19 +2,19 @@ from rich.console import Console
 import threading
 import time
 
-from src.tui.stage3_review import PathReviewRow, run_stage3_review
+from src.tui.final_review import FinalReviewRow, run_final_review
 
 
-def test_run_stage3_review_supports_tree_navigation_and_directory_toggle() -> None:
+def test_run_final_review_supports_tree_navigation_and_directory_toggle() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/docs/a.txt",
             tier="tier1",
             size_bytes=10,
             reason="doc",
             confidence=0.9,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/docs/b.txt",
             tier="tier2",
             size_bytes=10,
@@ -22,7 +22,7 @@ def test_run_stage3_review_supports_tree_navigation_and_directory_toggle() -> No
             confidence=0.3,
             ai_risk="low_value",
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/media/c.jpg",
             tier="tier2",
             size_bytes=10,
@@ -46,7 +46,7 @@ def test_run_stage3_review_supports_tree_navigation_and_directory_toggle() -> No
             assert value in {item["value"] for item in choices}
         return selected
 
-    selected = run_stage3_review(
+    selected = run_final_review(
         rows,
         action_prompt=fake_action_prompt,
         confirm_prompt=lambda _msg, _default: True,
@@ -56,16 +56,16 @@ def test_run_stage3_review_supports_tree_navigation_and_directory_toggle() -> No
     assert selected == {"/root/docs/a.txt", "/root/docs/b.txt"}
 
 
-def test_run_stage3_review_hides_low_value_only_branches_by_default() -> None:
+def test_run_final_review_hides_low_value_only_branches_by_default() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/keep/a.txt",
             tier="tier1",
             size_bytes=10,
             reason="doc",
             confidence=0.9,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/trash/a.tmp",
             tier="tier2",
             size_bytes=10,
@@ -81,7 +81,7 @@ def test_run_stage3_review_hides_low_value_only_branches_by_default() -> None:
         seen_choices.append([item["value"] for item in choices])
         return next(actions)
 
-    selected = run_stage3_review(
+    selected = run_final_review(
         rows,
         action_prompt=fake_action_prompt,
         confirm_prompt=lambda _msg, _default: True,
@@ -93,9 +93,9 @@ def test_run_stage3_review_hides_low_value_only_branches_by_default() -> None:
     assert "node::/root/trash" not in flattened
 
 
-def test_run_stage3_review_can_show_low_value_branches_from_start() -> None:
+def test_run_final_review_can_show_low_value_branches_from_start() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/trash/a.tmp",
             tier="tier2",
             size_bytes=10,
@@ -111,7 +111,7 @@ def test_run_stage3_review_can_show_low_value_branches_from_start() -> None:
         seen_choices.append([item["value"] for item in choices])
         return next(actions)
 
-    run_stage3_review(
+    run_final_review(
         rows,
         action_prompt=fake_action_prompt,
         confirm_prompt=lambda _msg, _default: True,
@@ -123,9 +123,9 @@ def test_run_stage3_review_can_show_low_value_branches_from_start() -> None:
     assert "node::/root/trash" in flattened
 
 
-def test_run_stage3_review_uses_tree_symbolic_choices_instead_of_verbs() -> None:
+def test_run_final_review_uses_tree_symbolic_choices_instead_of_verbs() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/docs/a.txt",
             tier="tier1",
             size_bytes=10,
@@ -139,7 +139,7 @@ def test_run_stage3_review_uses_tree_symbolic_choices_instead_of_verbs() -> None
         captured_names.extend([str(item["name"]) for item in choices])
         return "done"
 
-    run_stage3_review(
+    run_final_review(
         rows,
         action_prompt=fake_action_prompt,
         confirm_prompt=lambda _msg, _default: True,
@@ -153,9 +153,9 @@ def test_run_stage3_review_uses_tree_symbolic_choices_instead_of_verbs() -> None
     assert any(name.startswith(("●", "◐", "○", "▸", "▾")) for name in captured_names)
 
 
-def test_run_stage3_review_renders_each_folder_once() -> None:
+def test_run_final_review_renders_each_folder_once() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/docs/a.txt",
             tier="tier1",
             size_bytes=10,
@@ -171,7 +171,7 @@ def test_run_stage3_review_renders_each_folder_once() -> None:
         captured_names.extend([str(item["name"]) for item in choices])
         return next(actions)
 
-    run_stage3_review(
+    run_final_review(
         rows,
         action_prompt=fake_action_prompt,
         confirm_prompt=lambda _msg, _default: True,
@@ -182,9 +182,9 @@ def test_run_stage3_review_renders_each_folder_once() -> None:
     assert len(docs_rows) == 1
 
 
-def test_run_stage3_review_exposes_control_rows_for_enter_navigation() -> None:
+def test_run_final_review_exposes_control_rows_for_enter_navigation() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/docs/a.txt",
             tier="tier1",
             size_bytes=10,
@@ -211,7 +211,7 @@ def test_run_stage3_review_exposes_control_rows_for_enter_navigation() -> None:
             assert value in {item["value"] for item in choices}
         return selected
 
-    selected = run_stage3_review(
+    selected = run_final_review(
         rows,
         action_prompt=fake_action_prompt,
         confirm_prompt=lambda _msg, _default: True,
@@ -223,23 +223,23 @@ def test_run_stage3_review_exposes_control_rows_for_enter_navigation() -> None:
     assert "control::up" in captured_values
 
 
-def test_run_stage3_review_applies_ai_dfs_drop_recursively() -> None:
+def test_run_final_review_applies_ai_dfs_drop_recursively() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/docs/a.txt",
             tier="tier1",
             size_bytes=10,
             reason="doc",
             confidence=0.9,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/docs/sub/b.txt",
             tier="tier1",
             size_bytes=10,
             reason="doc",
             confidence=0.9,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/keep/c.txt",
             tier="tier2",
             size_bytes=10,
@@ -263,7 +263,7 @@ def test_run_stage3_review_applies_ai_dfs_drop_recursively() -> None:
             return {"decision": "keep", "reason": "important", "confidence": 0.9}
         return {"decision": "not_sure", "reason": "root", "confidence": 0.5}
 
-    selected = run_stage3_review(
+    selected = run_final_review(
         rows,
         action_prompt=lambda _m, _c: "done",
         confirm_prompt=lambda _msg, _default: True,
@@ -277,23 +277,23 @@ def test_run_stage3_review_applies_ai_dfs_drop_recursively() -> None:
     assert selected == {"/root/keep/c.txt"}
 
 
-def test_run_stage3_review_ai_dfs_requests_sibling_directories_concurrently() -> None:
+def test_run_final_review_ai_dfs_requests_sibling_directories_concurrently() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/a/file.txt",
             tier="tier1",
             size_bytes=1,
             reason="a",
             confidence=0.9,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/b/file.txt",
             tier="tier1",
             size_bytes=1,
             reason="b",
             confidence=0.9,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path="/root/c/file.txt",
             tier="tier1",
             size_bytes=1,
@@ -321,7 +321,7 @@ def test_run_stage3_review_ai_dfs_requests_sibling_directories_concurrently() ->
             return {"decision": "not_sure", "reason": "root", "confidence": 0.5}
         return {"decision": "keep", "reason": "leaf", "confidence": 0.9}
 
-    run_stage3_review(
+    run_final_review(
         rows,
         action_prompt=lambda _m, _c: "done",
         confirm_prompt=lambda _msg, _default: True,
@@ -330,3 +330,42 @@ def test_run_stage3_review_ai_dfs_requests_sibling_directories_concurrently() ->
     )
 
     assert active["max"] > 1
+
+
+def test_run_final_review_ai_dfs_does_not_auto_select_manual_only_paths() -> None:
+    rows = [
+        FinalReviewRow(
+            path="/root/docs/a.txt",
+            tier="tier1",
+            size_bytes=1,
+            reason="doc",
+            confidence=0.9,
+            internal_candidate=True,
+        ),
+        FinalReviewRow(
+            path="/root/ignored/manual.txt",
+            tier="ignored",
+            size_bytes=1,
+            reason="manual",
+            confidence=0.0,
+            internal_candidate=False,
+        ),
+    ]
+
+    def fake_ai_directory_decision(
+        _directory: str,
+        _child_directories: list[str],
+        _sample_files: list[str],
+    ) -> dict[str, object]:
+        return {"decision": "keep", "reason": "prefer keep", "confidence": 0.9}
+
+    selected = run_final_review(
+        rows,
+        action_prompt=lambda _m, _c: "done",
+        confirm_prompt=lambda _msg, _default: True,
+        console=Console(record=True),
+        ai_directory_decision_fn=fake_ai_directory_decision,
+    )
+
+    assert "/root/docs/a.txt" in selected
+    assert "/root/ignored/manual.txt" not in selected

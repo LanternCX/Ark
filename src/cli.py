@@ -17,13 +17,14 @@ from src.pipeline.run_backup import run_backup_pipeline
 from src.runtime_paths import (
     get_runtime_backup_runs_dir,
     get_runtime_config_path,
+    get_runtime_rules_md_path,
 )
 from src.runtime_logging import setup_runtime_logging
 from src.state.backup_run_store import BackupRunStore
 from src.state.config_store import JSONConfigStore
+from src.tui.final_review import FinalReviewRow
 from src.tui.main_menu import run_main_menu
 from src.tui.stage1_review import SuffixReviewRow
-from src.tui.stage3_review import PathReviewRow
 
 app = typer.Typer(help="Ark backup agent")
 logger = logging.getLogger("src.cli")
@@ -58,7 +59,7 @@ def _execute_backup(
     recovery_choice_prompt: Callable[[str, list[str]], str] | None = None,
 ) -> list[str]:
     stage1_review_fn = _non_interactive_stage1 if config.non_interactive else None
-    stage3_review_fn = _non_interactive_stage3 if config.non_interactive else None
+    final_review_fn = _non_interactive_final_review if config.non_interactive else None
     source_roots = [Path(item).expanduser().resolve() for item in config.source_roots]
     target = str(Path(config.target).expanduser().resolve())
     run_store = BackupRunStore(get_runtime_backup_runs_dir())
@@ -121,7 +122,8 @@ def _execute_backup(
             payload={"message": message},
         )
 
-    llm_kwargs = _llm_call_kwargs(config)
+    rules_context = _load_runtime_rules_context()
+    llm_kwargs = _llm_call_kwargs(config, rules_context)
 
     def suffix_risk_dispatch(exts: list[str]) -> dict[str, dict[str, object]]:
         if not config.ai_suffix_enabled:
@@ -190,7 +192,7 @@ def _execute_backup(
             dry_run=config.dry_run,
             source_roots=source_roots,
             stage1_review_fn=stage1_review_fn,
-            stage3_review_fn=stage3_review_fn,
+            final_review_fn=final_review_fn,
             suffix_risk_fn=suffix_risk_dispatch if config.ai_suffix_enabled else None,
             path_risk_fn=path_risk_dispatch if config.ai_path_enabled else None,
             directory_decision_fn=directory_decision_dispatch,
@@ -212,9 +214,9 @@ def _non_interactive_stage1(rows: list[SuffixReviewRow]) -> set[str]:
     return {row.ext for row in rows if row.label == "keep" and row.confidence >= 0.8}
 
 
-def _non_interactive_stage3(rows: list[PathReviewRow]) -> set[str]:
+def _non_interactive_final_review(rows: list[FinalReviewRow]) -> set[str]:
     """Select Tier 1 only when prompts are disabled."""
-    return {row.path for row in rows if row.tier == "tier1"}
+    return {row.path for row in rows if row.internal_candidate and row.tier == "tier1"}
 
 
 def _heuristic_suffix_risk(exts: list[str]) -> dict[str, dict[str, object]]:
@@ -290,7 +292,17 @@ def _default_recovery_choice_prompt(message: str, choices: list[str]) -> str:
     return result or choices[0]
 
 
-def _llm_call_kwargs(config: PipelineConfig) -> dict[str, str]:
+def _load_runtime_rules_context() -> str:
+    """Load runtime rules markdown text for LLM prompts."""
+    rules_path = get_runtime_rules_md_path()
+    try:
+        return rules_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Runtime rules unavailable at %s: %s", rules_path, exc)
+        return ""
+
+
+def _llm_call_kwargs(config: PipelineConfig, rules_context: str) -> dict[str, str]:
     """Build shared kwargs for LLM decision calls."""
     return {
         "model": config.llm_model,
@@ -301,6 +313,7 @@ def _llm_call_kwargs(config: PipelineConfig) -> dict[str, str]:
         "google_client_id": config.google_client_id,
         "google_client_secret": config.google_client_secret,
         "google_refresh_token": config.google_refresh_token,
+        "rules_context": rules_context,
     }
 
 

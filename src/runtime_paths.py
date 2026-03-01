@@ -51,3 +51,8 @@ def get_runtime_backup_runs_dir() -> Path:
 def get_runtime_rules_dir() -> Path:
     """Return runtime-local static rules directory."""
     return get_runtime_root() / "src" / "rules"
+
+
+def get_runtime_rules_md_path() -> Path:
+    """Return runtime-local rules markdown path."""
+    return get_runtime_root() / "rules.md"

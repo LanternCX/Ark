@@ -312,6 +312,174 @@ def test_execute_backup_uses_llm_dispatch_when_enabled(monkeypatch) -> None:
     assert path_result["/tmp/a.txt"]["reason"] == "ai"
 
 
+def test_execute_backup_forwards_runtime_rules_context_to_all_llm_calls(
+    monkeypatch, tmp_path: Path
+) -> None:
+    observed: dict[str, object] = {}
+    seen_rules_context: dict[str, str] = {}
+
+    class FakeStore:
+        def __init__(self, _path):
+            pass
+
+        def find_latest_resumable(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return None
+
+        def create_run(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return "run-1"
+
+        def append_event(self, run_id, stage, event, payload):
+            del run_id, stage, event, payload
+
+        def mark_status(self, run_id, status):
+            del run_id, status
+
+    def fake_run_backup_pipeline(**kwargs):
+        observed.update(kwargs)
+        return ["ok"]
+
+    def fake_llm_suffix_risk(exts, **kwargs):
+        seen_rules_context["suffix"] = kwargs["rules_context"]
+        return {
+            ext: {"risk": "high_value", "confidence": 1.0, "reason": "ai"}
+            for ext in exts
+        }
+
+    def fake_llm_path_risk(paths, **kwargs):
+        seen_rules_context["path"] = kwargs["rules_context"]
+        return {
+            path: {"risk": "neutral", "score": 0.5, "confidence": 1.0, "reason": "ai"}
+            for path in paths
+        }
+
+    def fake_llm_directory_decision(_directory, _children, _samples, **kwargs):
+        seen_rules_context["dir"] = kwargs["rules_context"]
+        return {"decision": "keep", "confidence": 1.0, "reason": "ai"}
+
+    rules_text = "always keep project docs"
+    rules_path = tmp_path / "rules.md"
+    rules_path.write_text(rules_text, encoding="utf-8")
+
+    monkeypatch.setenv("ARK_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+    monkeypatch.setattr(cli_module, "BackupRunStore", FakeStore)
+    monkeypatch.setattr(cli_module, "llm_suffix_risk", fake_llm_suffix_risk)
+    monkeypatch.setattr(cli_module, "llm_path_risk", fake_llm_path_risk)
+    monkeypatch.setattr(
+        cli_module,
+        "llm_directory_decision",
+        fake_llm_directory_decision,
+    )
+
+    config = PipelineConfig(
+        target="~/backup",
+        source_roots=["~/Code"],
+        dry_run=False,
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="openai/gpt-4.1-mini",
+        llm_api_key="sk-test",
+        ai_suffix_enabled=True,
+        ai_path_enabled=True,
+    )
+
+    cli_module._execute_backup(config)
+
+    observed["suffix_risk_fn"]([".pdf"])
+    observed["path_risk_fn"](["/tmp/a.txt"])
+    observed["directory_decision_fn"]("/tmp", [], [])
+
+    assert seen_rules_context == {
+        "suffix": rules_text,
+        "path": rules_text,
+        "dir": rules_text,
+    }
+
+
+def test_execute_backup_uses_empty_rules_context_when_rules_file_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    observed: dict[str, object] = {}
+    seen_rules_context: dict[str, str] = {}
+
+    class FakeStore:
+        def __init__(self, _path):
+            pass
+
+        def find_latest_resumable(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return None
+
+        def create_run(self, target, source_roots, dry_run):
+            del target, source_roots, dry_run
+            return "run-1"
+
+        def append_event(self, run_id, stage, event, payload):
+            del run_id, stage, event, payload
+
+        def mark_status(self, run_id, status):
+            del run_id, status
+
+    def fake_run_backup_pipeline(**kwargs):
+        observed.update(kwargs)
+        return ["ok"]
+
+    def fake_llm_suffix_risk(exts, **kwargs):
+        seen_rules_context["suffix"] = kwargs["rules_context"]
+        return {
+            ext: {"risk": "high_value", "confidence": 1.0, "reason": "ai"}
+            for ext in exts
+        }
+
+    def fake_llm_path_risk(paths, **kwargs):
+        seen_rules_context["path"] = kwargs["rules_context"]
+        return {
+            path: {"risk": "neutral", "score": 0.5, "confidence": 1.0, "reason": "ai"}
+            for path in paths
+        }
+
+    def fake_llm_directory_decision(_directory, _children, _samples, **kwargs):
+        seen_rules_context["dir"] = kwargs["rules_context"]
+        return {"decision": "keep", "confidence": 1.0, "reason": "ai"}
+
+    monkeypatch.setenv("ARK_RUNTIME_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli_module, "run_backup_pipeline", fake_run_backup_pipeline)
+    monkeypatch.setattr(cli_module, "BackupRunStore", FakeStore)
+    monkeypatch.setattr(cli_module, "llm_suffix_risk", fake_llm_suffix_risk)
+    monkeypatch.setattr(cli_module, "llm_path_risk", fake_llm_path_risk)
+    monkeypatch.setattr(
+        cli_module,
+        "llm_directory_decision",
+        fake_llm_directory_decision,
+    )
+
+    config = PipelineConfig(
+        target="~/backup",
+        source_roots=["~/Code"],
+        dry_run=False,
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="openai/gpt-4.1-mini",
+        llm_api_key="sk-test",
+        ai_suffix_enabled=True,
+        ai_path_enabled=True,
+    )
+
+    cli_module._execute_backup(config)
+
+    observed["suffix_risk_fn"]([".pdf"])
+    observed["path_risk_fn"](["/tmp/a.txt"])
+    observed["directory_decision_fn"]("/tmp", [], [])
+
+    assert seen_rules_context == {
+        "suffix": "",
+        "path": "",
+        "dir": "",
+    }
+
+
 def test_execute_backup_dry_run_uses_local_heuristics_without_remote_llm(
     monkeypatch,
 ) -> None:

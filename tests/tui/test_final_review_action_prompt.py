@@ -1,6 +1,6 @@
 from prompt_toolkit.keys import Keys
 
-import src.tui.stage3_review as stage3_review
+import src.tui.final_review as final_review
 
 
 def test_default_action_prompt_registers_eager_exit_bindings(monkeypatch) -> None:
@@ -13,9 +13,9 @@ def test_default_action_prompt_registers_eager_exit_bindings(monkeypatch) -> Non
         def run(self) -> str:
             return "done"
 
-    monkeypatch.setattr(stage3_review, "Application", FakeApplication)
+    monkeypatch.setattr(final_review, "Application", FakeApplication)
 
-    result = stage3_review._default_action_prompt(
+    result = final_review._default_action_prompt(
         "msg",
         [{"name": "item", "value": "node::/root"}],
     )
@@ -29,5 +29,5 @@ def test_default_action_prompt_registers_eager_exit_bindings(monkeypatch) -> Non
 
 
 def test_tree_action_hint_mentions_done_shortcuts() -> None:
-    assert "q/esc=done" in stage3_review._TREE_ACTION_HINT
-    assert "Enter=select" in stage3_review._TREE_ACTION_HINT
+    assert "q/esc=done" in final_review._TREE_ACTION_HINT
+    assert "Enter=select" in final_review._TREE_ACTION_HINT

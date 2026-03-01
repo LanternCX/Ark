@@ -15,7 +15,7 @@ def test_run_backup_pipeline_executes_mirror_copy_for_selected_paths(tmp_path) -
     def fake_stage1_review(rows):
         return {".txt"}
 
-    def fake_stage3_review(rows):
+    def fake_final_review(rows):
         return {row.path for row in rows}
 
     run_backup_pipeline(
@@ -23,7 +23,7 @@ def test_run_backup_pipeline_executes_mirror_copy_for_selected_paths(tmp_path) -
         dry_run=False,
         source_roots=[src_root],
         stage1_review_fn=fake_stage1_review,
-        stage3_review_fn=fake_stage3_review,
+        final_review_fn=fake_final_review,
     )
 
     assert (target / "src" / "docs" / "a.txt").exists()
@@ -41,13 +41,13 @@ def test_run_backup_pipeline_emits_progress_messages(tmp_path) -> None:
         dry_run=True,
         source_roots=[src_root],
         stage1_review_fn=lambda rows: {row.ext for row in rows},
-        stage3_review_fn=lambda rows: {row.path for row in rows},
+        final_review_fn=lambda rows: {row.path for row in rows},
         progress_callback=progress.append,
     )
 
     joined = "\n".join(progress)
     assert "scan" in joined.lower()
-    assert "ai" in joined.lower()
+    assert "internal_tiering" in joined.lower() or "ai" in joined.lower()
     assert "copy" in joined.lower() or "dry run" in joined.lower()
 
 
@@ -83,7 +83,7 @@ def test_run_backup_pipeline_can_resume_from_saved_selection_state(tmp_path) -> 
         dry_run=True,
         source_roots=[src_root],
         stage1_review_fn=lambda rows: {row.ext for row in rows},
-        stage3_review_fn=lambda rows: {row.path for row in rows},
+        final_review_fn=lambda rows: {row.path for row in rows},
         run_store=store,
         run_id=run_id,
         resume=True,
@@ -92,7 +92,7 @@ def test_run_backup_pipeline_can_resume_from_saved_selection_state(tmp_path) -> 
     assert any("resumed" in line.lower() for line in logs)
 
 
-def test_run_backup_pipeline_passes_directory_decision_fn_to_stage3(
+def test_run_backup_pipeline_passes_directory_decision_fn_to_final_review(
     tmp_path, monkeypatch
 ) -> None:
     src_root = tmp_path / "src"
@@ -102,11 +102,11 @@ def test_run_backup_pipeline_passes_directory_decision_fn_to_stage3(
 
     observed: dict[str, object] = {}
 
-    def fake_stage3_review(rows, **kwargs):
+    def fake_final_review(rows, **kwargs):
         observed.update(kwargs)
         return {row.path for row in rows}
 
-    monkeypatch.setattr(run_backup_module, "run_stage3_review", fake_stage3_review)
+    monkeypatch.setattr(run_backup_module, "run_final_review", fake_final_review)
 
     run_backup_pipeline(
         target=str(tmp_path / "backup"),
@@ -147,9 +147,38 @@ def test_run_backup_pipeline_prunes_local_noise_directories_before_stage1(
         dry_run=True,
         source_roots=[src_root],
         stage1_review_fn=fake_stage1_review,
-        stage3_review_fn=lambda _rows: set(),
+        final_review_fn=lambda _rows: set(),
     )
 
     discovered_exts = {row.ext for row in observed_rows}
     assert ".txt" in discovered_exts
     assert ".py" not in discovered_exts
+
+
+def test_run_backup_pipeline_copies_user_selected_filtered_and_ignored_files(
+    tmp_path,
+) -> None:
+    src_root = tmp_path / "src"
+    src_root.mkdir()
+
+    keep_file = src_root / "keep.md"
+    filtered_file = src_root / "drop.bin"
+    ignored_file = src_root / ".venv" / "ignored.py"
+
+    keep_file.write_text("keep", encoding="utf-8")
+    filtered_file.write_text("filtered", encoding="utf-8")
+    ignored_file.parent.mkdir(parents=True)
+    ignored_file.write_text("ignored", encoding="utf-8")
+
+    target = tmp_path / "backup"
+
+    run_backup_pipeline(
+        target=str(target),
+        dry_run=False,
+        source_roots=[src_root],
+        stage1_review_fn=lambda _rows: {".md"},
+        final_review_fn=lambda _rows: {str(filtered_file), str(ignored_file)},
+    )
+
+    assert (target / "src" / "drop.bin").exists()
+    assert (target / "src" / ".venv" / "ignored.py").exists()

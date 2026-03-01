@@ -1,22 +1,22 @@
 from rich.console import Console
 
-from src.tui.stage3_review import (
-    PathReviewRow,
+from src.tui.final_review import (
+    FinalReviewRow,
     _default_checkbox_prompt,
-    run_stage3_review,
+    run_final_review,
 )
 
 
-def test_run_stage3_review_defaults_to_tier1_only() -> None:
+def test_run_final_review_defaults_to_tier1_only() -> None:
     rows = [
-        PathReviewRow(
+        FinalReviewRow(
             path="C:/Users/me/Documents/report.pdf",
             tier="tier1",
             size_bytes=1024,
             reason="Personal document",
             confidence=0.93,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path="C:/Users/me/Downloads/archive.zip",
             tier="tier2",
             size_bytes=2048,
@@ -38,7 +38,7 @@ def test_run_stage3_review_defaults_to_tier1_only() -> None:
         assert default is True
         return True
 
-    selected = run_stage3_review(
+    selected = run_final_review(
         rows,
         checkbox_prompt=fake_checkbox,
         confirm_prompt=fake_confirm,
@@ -58,7 +58,7 @@ def test_default_checkbox_prompt_sets_checked_choices(monkeypatch) -> None:
         captured.update(kwargs)
         return FakePrompt()
 
-    monkeypatch.setattr("src.tui.stage3_review.questionary.checkbox", fake_checkbox)
+    monkeypatch.setattr("src.tui.final_review.questionary.checkbox", fake_checkbox)
 
     result = _default_checkbox_prompt(
         message="Final backup selection",

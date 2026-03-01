@@ -56,8 +56,8 @@ Ark 会进入一级 TUI 菜单：
 2. **进入主菜单**：你可以继续修改 `Settings`，也可以直接 `Execute Backup` 执行备份。
 3. **配置生效**：在 `Settings` 中修改并保存后，新的配置会立即成为本次运行的执行依据。
 4. **执行前校验**：进入 `Execute Backup` 时，Ark 会先检查关键配置是否完整（例如目标路径、源目录、模型凭据是否满足当前模式要求）。
-5. **分阶段筛选与确认**：依次经过 Stage 1（后缀筛选）、Stage 2（路径分层）、Stage 3（最终确认）。
-6. **写入结果**：当 `Dry run = No` 时，Stage 3 确认后的文件会实际复制到目标目录；当 `Dry run = Yes` 时，只展示流程结果，不写文件，并且 AI 决策仅使用本地启发式（不发起远程 LLM 请求）。
+5. **用户可见的两个执行阶段**：Stage 1（后缀筛选）与 Stage 2（最终确认）。内部路径分层仍会执行，但不会作为用户阶段单独展示。
+6. **写入结果**：当 `Dry run = No` 时，Stage 2 确认后的文件会实际复制到目标目录；当 `Dry run = Yes` 时，只展示流程结果，不写文件，并且 AI 决策仅使用本地启发式（不发起远程 LLM 请求）。
 7. **可恢复运行**：执行过程会持续写检查点，如果中断，下次可继续上次进度。
 
 你可以把它理解成：**先配置 -> 再预演 -> 最后落盘**。
@@ -94,16 +94,17 @@ Ark 会进入一级 TUI 菜单：
 | `Use AI suffix risk classification?` | 启用 AI 后缀风险分类 | 控制 Stage 1 是否使用 AI 后缀建议。关闭后仅用本地逻辑。 |
 | `Use AI path pruning suggestions?` | 启用 AI 路径减枝建议 | 控制路径层是否使用 AI 建议。关闭后仅用本地逻辑。 |
 | `Send full file paths to AI?` | 向 AI 发送完整路径 | `No` 为最小元数据模式；`Yes` 会发送完整路径字符串。 |
-| `Hide low-value branches by default?` | 默认隐藏低价值分支 | 控制 Stage 3 初始可见范围，影响首轮查看效率。 |
+| `Hide low-value branches by default?` | 默认隐藏低价值分支 | 控制 Stage 2 初始可见范围，影响首轮查看效率。 |
 | `Test LLM connectivity now?` | 立即测试 LLM 连通性 | 用当前设置发送测试请求，立即反馈配置是否可用。 |
 
 ### 第三步：执行 `Execute Backup`
 
 - `Stage 1: Suffix Screening`：按后缀先筛一轮候选文件。
-- `Stage 2: Path Tiering`：按路径优先级整理候选。
-- `Stage 3: Final Review and Backup`：最终确认并执行复制。
+- 内部路径分层会继续计算推荐信息，但不会作为用户阶段单独展示。
+- `Stage 2: Final Review and Backup`：会显示全部扫描文件（包括被 Stage 1 过滤的文件和命中 ignore 规则的文件），并在此阶段完成最终确认与复制。
+- 在 Stage 2 中，你可以手动勾选任意可见文件纳入备份。
 
-在 Stage 3 中，`Enter` 用于展开目录，`Space` 用于切换选中状态。
+在 Stage 2 中，`Enter` 用于展开目录，`Space` 用于切换选中状态。
 
 ### 配置项在流程中的生效位置
 
@@ -121,6 +122,11 @@ Ark 会把检查点写入 `<运行目录>/.ark/state/backup_runs/`。如果上�
 - 配置文件：`<运行目录>/.ark/config.json`
 - 运行日志：`<运行目录>/.ark/logs/ark.log`
 - 检查点与运行记录：`<运行目录>/.ark/state/backup_runs/`
+- 可选运行时 AI 偏好提示文件：`<运行目录>/rules.md`
+
+`<运行目录>/rules.md` 是可选的用户自定义纯文本偏好说明。
+仅当远程 LLM 调用开启时，Ark 才可能将这份用户明确提供的文本放入远程 AI 提示中，作为后缀/路径/目录阶段的偏好参考。
+该文件不会改变输出 JSON schema 合同。
 
 ## 隐私边界
 
@@ -135,7 +141,11 @@ Ark 支持两种 AI 数据共享模式：
 2. 完整路径模式（可选开启）
    - 发送完整文件路径字符串，用于后缀/路径减枝建议
 
-Ark 不上传文件内容。
+“不上传文件内容”指的是被扫描并准备备份的源文件内容。
+
+当远程 LLM 调用开启时，Ark 仍可能在远程 AI 提示中包含 `<运行目录>/rules.md` 这份用户明确提供的偏好文本。
+
+`rules.md` 仅作为偏好提示，不会放宽上述隐私边界。
 
 ## 技术栈
 

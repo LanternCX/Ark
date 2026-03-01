@@ -43,3 +43,11 @@ def test_runtime_paths_are_below_runtime_data_dir(monkeypatch, tmp_path: Path) -
         tmp_path / ".ark" / "state" / "backup_runs"
     )
     assert runtime_paths.get_runtime_rules_dir() == tmp_path / "src" / "rules"
+
+
+def test_runtime_rules_md_path_is_under_runtime_root(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("ARK_RUNTIME_ROOT", str(tmp_path))
+
+    assert runtime_paths.get_runtime_rules_md_path() == tmp_path / "rules.md"

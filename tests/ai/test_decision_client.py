@@ -55,3 +55,89 @@ def test_llm_directory_decision_returns_not_sure_on_parse_failure(monkeypatch) -
     )
 
     assert result["decision"] == "not_sure"
+
+
+def test_llm_functions_accept_rules_context_kwarg(monkeypatch) -> None:
+    def fake_classify_batch(**_kwargs):
+        return '{"items":[]}'
+
+    monkeypatch.setattr(decision_client, "classify_batch", fake_classify_batch)
+
+    suffix_result = decision_client.llm_suffix_risk(
+        [".pdf"],
+        model="openai/gpt-4.1-mini",
+        rules_context="Prefer docs",
+    )
+    path_result = decision_client.llm_path_risk(
+        ["/a/b.txt"],
+        model="openai/gpt-4.1-mini",
+        rules_context="Prefer docs",
+    )
+    directory_result = decision_client.llm_directory_decision(
+        "/root/docs",
+        ["/root/docs/sub"],
+        ["/root/docs/a.txt"],
+        model="openai/gpt-4.1-mini",
+        rules_context="Prefer docs",
+    )
+
+    assert ".pdf" in suffix_result
+    assert "/a/b.txt" in path_result
+    assert directory_result["decision"] == "not_sure"
+
+
+def test_llm_path_risk_includes_rules_block_when_rules_context_present(
+    monkeypatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_classify_batch(**kwargs):
+        captured["prompt"] = kwargs["prompt"]
+        return '{"items":[]}'
+
+    monkeypatch.setattr(decision_client, "classify_batch", fake_classify_batch)
+
+    decision_client.llm_path_risk(
+        ["/a/b.txt"],
+        model="openai/gpt-4.1-mini",
+        rules_context="Prefer docs",
+    )
+
+    assert "Preference rules from runtime rules.md" in captured["prompt"]
+    assert "Prefer docs" in captured["prompt"]
+
+
+def test_llm_path_risk_omits_rules_block_when_rules_context_empty(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_classify_batch(**kwargs):
+        captured["prompt"] = kwargs["prompt"]
+        return '{"items":[]}'
+
+    monkeypatch.setattr(decision_client, "classify_batch", fake_classify_batch)
+
+    decision_client.llm_path_risk(
+        ["/a/b.txt"],
+        model="openai/gpt-4.1-mini",
+        rules_context="   ",
+    )
+
+    assert "Preference rules from runtime rules.md" not in captured["prompt"]
+
+
+def test_rules_context_is_truncated_with_marker(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_classify_batch(**kwargs):
+        captured["prompt"] = kwargs["prompt"]
+        return '{"items":[]}'
+
+    monkeypatch.setattr(decision_client, "classify_batch", fake_classify_batch)
+
+    decision_client.llm_path_risk(
+        ["/a/b.txt"],
+        model="openai/gpt-4.1-mini",
+        rules_context="x" * 12100,
+    )
+
+    assert "...[truncated]" in captured["prompt"]

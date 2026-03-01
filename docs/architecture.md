@@ -24,8 +24,8 @@ Ark enforces one-way dependencies:
 3. Settings persist to `<runtime-root>/.ark/config.json` via `JSONConfigStore`.
 4. `Execute Backup` runs staged pipeline in `src/pipeline/run_backup.py`.
 5. Stage 1 groups suffixes by category buckets for layered decisions.
-6. Stage 1/2/3 decisions produce final selected paths.
-7. Stage 3 uses paginated tree navigation with tri-state folder selection and symbol-first UI controls.
+6. Internal tiering computes recommendation metadata after Stage 1 and is not shown as a user stage.
+7. Stage 2 (final review) uses paginated tree navigation with tri-state folder selection and symbol-first UI controls.
 8. `backup.executor` mirrors selected files unless dry run.
 9. Runtime checkpoints persist resumable progress under `<runtime-root>/.ark/state/backup_runs`.
 
@@ -57,15 +57,19 @@ Validation rules run before execution. Typical blockers:
 AI classification scopes:
 
 - Suffix risk recommendation can influence stage-1 default whitelist.
-- Path risk recommendation can influence stage-2 reasons and stage-3 low-value pruning defaults.
-- Stage-3 can run serial AI directory DFS decisions (`keep/drop/not_sure`) before final interactive confirmation.
+- Path risk recommendation can influence internal-tiering reasons and stage-2 low-value pruning defaults.
+- Stage-2 can run serial AI directory DFS decisions (`keep/drop/not_sure`) before final interactive confirmation.
 - During `dry_run`, AI dispatch uses local heuristics only and skips remote provider calls.
-- Full path payloads are supported when configured; no file content is sent.
+- Optional `<runtime-root>/rules.md` is explicit user-provided preference text and may be included in remote AI prompts for suffix/path/directory hints when remote calls are active.
+- `rules.md` hint usage does not change the output JSON schema contract.
+- Full path payloads are supported when configured; "no file content" means scanned source files being backed up.
 - Scan pruning and suffix category defaults are loaded from external rule files, then fused with AI decisions.
+- Final review includes all scanned files, including files filtered by Stage 1 and files matched by ignore rules.
+- Internal tiering is not shown as a user stage.
 
 ## 5. Runtime Checkpoint And Logging
 
-- Pipeline supports resumable runs with stage checkpoints (`scan`, `stage1`, `stage2`, `review`, `copy`).
+- Pipeline supports resumable runs with stage checkpoints (`scan`, `stage1`, `internal_tiering`, `final_review`, `copy`).
 - Interruptions can be resumed using persisted run metadata and checkpoint payloads.
 - Runtime logging uses rich console output + rotating file logs.
 - LiteLLM dependency loggers are aligned and filtered to warning-level noise floor.

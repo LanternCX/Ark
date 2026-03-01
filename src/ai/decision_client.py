@@ -7,6 +7,10 @@ import json
 from src.ai.router import classify_batch
 
 
+MAX_RULES_CONTEXT_CHARS = 12000
+RULES_TRUNCATION_MARKER = "...[truncated]"
+
+
 def llm_suffix_risk(
     extensions: list[str],
     *,
@@ -18,16 +22,20 @@ def llm_suffix_risk(
     google_client_id: str = "",
     google_client_secret: str = "",
     google_refresh_token: str = "",
+    rules_context: str = "",
 ) -> dict[str, dict[str, object]]:
     """Classify suffix risk with one LLM call and parse JSON output."""
     if not extensions:
         return {}
 
-    prompt = (
-        "Return strict JSON only. "
-        'Schema: {"items":[{"key":".ext","decision":"keep|drop|not_sure",'
-        '"confidence":0.0,"reason":"..."}]}. '
-        f"Input suffixes: {json.dumps(sorted(set(extensions)))}"
+    prompt = _compose_prompt(
+        schema_block=(
+            "Return strict JSON only. "
+            'Schema: {"items":[{"key":".ext","decision":"keep|drop|not_sure",'
+            '"confidence":0.0,"reason":"..."}]}.'
+        ),
+        input_block=f"Input suffixes: {json.dumps(sorted(set(extensions)))}",
+        rules_context=rules_context,
     )
     raw = classify_batch(
         model=model,
@@ -74,16 +82,20 @@ def llm_path_risk(
     google_client_id: str = "",
     google_client_secret: str = "",
     google_refresh_token: str = "",
+    rules_context: str = "",
 ) -> dict[str, dict[str, object]]:
     """Classify path risk for Stage 2."""
     if not paths:
         return {}
 
-    prompt = (
-        "Return strict JSON only. "
-        'Schema: {"items":[{"key":"path","decision":"keep|drop|not_sure",'
-        '"score":0.0,"confidence":0.0,"reason":"..."}]}. '
-        f"Input paths: {json.dumps(paths)}"
+    prompt = _compose_prompt(
+        schema_block=(
+            "Return strict JSON only. "
+            'Schema: {"items":[{"key":"path","decision":"keep|drop|not_sure",'
+            '"score":0.0,"confidence":0.0,"reason":"..."}]}.'
+        ),
+        input_block=f"Input paths: {json.dumps(paths)}",
+        rules_context=rules_context,
     )
     raw = classify_batch(
         model=model,
@@ -139,13 +151,19 @@ def llm_directory_decision(
     google_client_id: str = "",
     google_client_secret: str = "",
     google_refresh_token: str = "",
+    rules_context: str = "",
 ) -> dict[str, object]:
-    """Classify one directory for Stage 3 DFS decision."""
-    prompt = (
-        "Return strict JSON only. "
-        'Schema: {"decision":"keep|drop|not_sure","confidence":0.0,"reason":"..."}. '
-        f"Directory: {directory}. Child directories: {json.dumps(child_directories[:20])}. "
-        f"Sample files: {json.dumps(sample_files[:20])}."
+    """Classify one directory for final-review DFS decision."""
+    prompt = _compose_prompt(
+        schema_block=(
+            "Return strict JSON only. "
+            'Schema: {"decision":"keep|drop|not_sure","confidence":0.0,"reason":"..."}.'
+        ),
+        input_block=(
+            f"Directory: {directory}. Child directories: {json.dumps(child_directories[:20])}. "
+            f"Sample files: {json.dumps(sample_files[:20])}."
+        ),
+        rules_context=rules_context,
     )
     raw = classify_batch(
         model=model,
@@ -184,6 +202,29 @@ def _try_parse_json(raw: str) -> dict[str, object] | None:
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def _normalize_rules_context(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return ""
+    if len(normalized) <= MAX_RULES_CONTEXT_CHARS:
+        return normalized
+    truncated = normalized[:MAX_RULES_CONTEXT_CHARS].rstrip()
+    return f"{truncated}\n{RULES_TRUNCATION_MARKER}"
+
+
+def _compose_prompt(schema_block: str, input_block: str, rules_context: str) -> str:
+    prompt = f"{schema_block} {input_block}"
+    rules_block = _normalize_rules_context(rules_context)
+    if not rules_block:
+        return prompt
+    return (
+        f"{prompt}\n\n"
+        "Preference rules from runtime rules.md (hints only). "
+        "Do not change the required output JSON schema, keys, or value types.\n"
+        f"{rules_block}"
+    )
 
 
 def _extract_json_candidate(text: str) -> str:

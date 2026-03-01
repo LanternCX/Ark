@@ -15,7 +15,7 @@ from src.rules.local_rules import (
 from src.state.backup_run_store import BackupRunStore
 from src.signals.extractor import extension_score
 from src.tui.stage1_review import SuffixReviewRow, run_stage1_review
-from src.tui.stage3_review import PathReviewRow, run_stage3_review
+from src.tui.final_review import FinalReviewRow, run_final_review
 
 HARD_DROP_SUFFIXES = hard_drop_suffixes()
 
@@ -25,7 +25,7 @@ def run_backup_pipeline(
     dry_run: bool,
     source_roots: list[Path] | None = None,
     stage1_review_fn: Callable[[list[SuffixReviewRow]], set[str]] | None = None,
-    stage3_review_fn: Callable[[list[PathReviewRow]], set[str]] | None = None,
+    final_review_fn: Callable[[list[FinalReviewRow]], set[str]] | None = None,
     suffix_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
     path_risk_fn: Callable[[list[str]], dict[str, dict[str, object]]] | None = None,
     directory_decision_fn: (
@@ -66,6 +66,7 @@ def run_backup_pipeline(
             resume_payload=resume_state.get("scan") if resume else None,
             checkpoint_callback=lambda payload: checkpoint("scan", payload),
         )
+        all_files_by_root = _collect_all_files_by_root(source_roots)
     except KeyboardInterrupt:
         if run_store and run_id:
             run_store.mark_status(run_id, "paused")
@@ -99,33 +100,46 @@ def run_backup_pipeline(
     progress(f"[stage1] whitelist={len(whitelist)}")
     logs.append(f"Whitelist size: {len(whitelist)}")
 
-    logs.append("Stage 2: Path Tiering")
-    path_rows = _build_stage2_rows(
+    internal_rows = _build_internal_tiering_rows(
         files_by_root,
         whitelist,
         use_sample_rows=using_sample_data,
         path_risk_fn=path_risk_fn,
         send_full_path_to_ai=send_full_path_to_ai,
         progress_callback=progress,
-        resume_payload=resume_state.get("stage2") if resume else None,
-        checkpoint_callback=lambda payload: checkpoint("stage2", payload),
+        resume_payload=(
+            _resume_checkpoint_payload(resume_state, "internal_tiering", "stage2")
+            if resume
+            else None
+        ),
+        checkpoint_callback=lambda payload: checkpoint("internal_tiering", payload),
     )
-    progress(f"[ai] candidates={len(path_rows)}")
-    logs.append(f"Tier candidates: {len(path_rows)}")
+    progress(f"[internal_tiering] candidates={len(internal_rows)}")
 
-    logs.append("Stage 3: Final Review and Backup")
-    if stage3_review_fn:
-        selected_paths = stage3_review_fn(path_rows)
+    review_rows = _build_final_review_rows(
+        all_files_by_root=all_files_by_root,
+        filtered_files_by_root=files_by_root,
+        internal_rows=internal_rows,
+        use_sample_rows=using_sample_data,
+    )
+
+    logs.append("Stage 2: Final Review and Backup")
+    if final_review_fn:
+        selected_paths = final_review_fn(review_rows)
     else:
-        selected_paths = run_stage3_review(
-            path_rows,
+        selected_paths = run_final_review(
+            review_rows,
             hide_low_value_default=(ai_prune_mode == "hide_low_value"),
-            resume_state=resume_state.get("review") if resume else None,
-            checkpoint_callback=lambda payload: checkpoint("review", payload),
+            resume_state=(
+                _resume_checkpoint_payload(resume_state, "final_review", "review")
+                if resume
+                else None
+            ),
+            checkpoint_callback=lambda payload: checkpoint("final_review", payload),
             ai_directory_decision_fn=directory_decision_fn,
         )
-    checkpoint("review", {"selected_paths": sorted(selected_paths)})
-    progress(f"[review] selected={len(selected_paths)}")
+    checkpoint("final_review", {"selected_paths": sorted(selected_paths)})
+    progress(f"[final_review] selected={len(selected_paths)}")
     logs.append(f"Selected paths: {len(selected_paths)}")
     logs.append(f"Target: {target}")
     logs.append(f"Dry run: {dry_run}")
@@ -136,7 +150,7 @@ def run_backup_pipeline(
         logs.append("Dry run complete. No files copied.")
     else:
         copied_count = _copy_selected_paths(
-            files_by_root=files_by_root,
+            files_by_root=all_files_by_root,
             selected_paths=selected_paths,
             target_root=Path(target),
             progress_callback=progress,
@@ -178,24 +192,24 @@ def _sample_suffix_rows() -> list[SuffixReviewRow]:
     ]
 
 
-def _sample_path_rows() -> list[PathReviewRow]:
+def _sample_path_rows() -> list[FinalReviewRow]:
     home = Path.home()
     return [
-        PathReviewRow(
+        FinalReviewRow(
             path=str(home / "Documents" / "report.pdf"),
             tier="tier1",
             size_bytes=81234,
             reason="High-value user document path",
             confidence=0.93,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path=str(home / "Pictures" / "holiday.jpg"),
             tier="tier1",
             size_bytes=4_202_444,
             reason="Personal media with likely irreplaceable value",
             confidence=0.89,
         ),
-        PathReviewRow(
+        FinalReviewRow(
             path=str(home / "Downloads" / "archive.zip"),
             tier="tier2",
             size_bytes=132_100_230,
@@ -287,6 +301,27 @@ def _collect_files_by_root(
     return files_by_root
 
 
+def _collect_all_files_by_root(
+    source_roots: list[Path] | None,
+) -> dict[Path, list[Path]]:
+    if not source_roots:
+        return {}
+
+    files_by_root: dict[Path, list[Path]] = {}
+    for root in source_roots:
+        if not root.exists() or not root.is_dir():
+            continue
+
+        files: list[Path] = []
+        for current, _dir_names, file_names in os.walk(root, topdown=True):
+            base = Path(current)
+            for file_name in file_names:
+                files.append(base / file_name)
+        files_by_root[root] = sorted(files, key=lambda item: str(item))
+
+    return files_by_root
+
+
 def _build_stage1_rows(
     files_by_root: dict[Path, list[Path]],
     use_sample_rows: bool,
@@ -363,7 +398,7 @@ def _stage1_heuristic(ext: str) -> tuple[str, str, float, str]:
     return ("drop", "likely-generated", 0.70, "Likely generated or low-value artifact")
 
 
-def _build_stage2_rows(
+def _build_internal_tiering_rows(
     files_by_root: dict[Path, list[Path]],
     whitelist: set[str],
     use_sample_rows: bool,
@@ -372,7 +407,7 @@ def _build_stage2_rows(
     progress_callback: Callable[[str], None] | None = None,
     resume_payload: dict | None = None,
     checkpoint_callback: Callable[[dict], None] | None = None,
-) -> list[PathReviewRow]:
+) -> list[FinalReviewRow]:
     progress = progress_callback or (lambda _message: None)
     if not files_by_root:
         return _sample_path_rows() if use_sample_rows else []
@@ -417,7 +452,7 @@ def _build_stage2_rows(
                     }
                 )
 
-    rows: list[PathReviewRow] = []
+    rows: list[FinalReviewRow] = []
     for path in candidate_paths:
         signal_score = extension_score(path)
         ai_score = _ai_score_heuristic(path)
@@ -438,7 +473,7 @@ def _build_stage2_rows(
             signal_score=signal_score, ai_score=ai_score, confidence=confidence
         )
         rows.append(
-            PathReviewRow(
+            FinalReviewRow(
                 path=str(path),
                 tier=tier,
                 size_bytes=path.stat().st_size,
@@ -448,6 +483,72 @@ def _build_stage2_rows(
             )
         )
     return rows
+
+
+def _build_final_review_rows(
+    all_files_by_root: dict[Path, list[Path]],
+    filtered_files_by_root: dict[Path, list[Path]],
+    internal_rows: list[FinalReviewRow],
+    use_sample_rows: bool,
+) -> list[FinalReviewRow]:
+    if not all_files_by_root:
+        return _sample_path_rows() if use_sample_rows else internal_rows
+
+    internal_by_path = {row.path: row for row in internal_rows}
+    filtered_paths = {
+        str(path) for paths in filtered_files_by_root.values() for path in paths
+    }
+    all_paths = sorted(
+        {str(path) for paths in all_files_by_root.values() for path in paths}
+    )
+
+    rows: list[FinalReviewRow] = []
+    for path in all_paths:
+        existing = internal_by_path.get(path)
+        if existing is not None:
+            rows.append(existing)
+            continue
+
+        tier = "stage1_filtered" if path in filtered_paths else "ignored"
+        reason = (
+            "Excluded by Stage 1 suffix screening; selectable in final review"
+            if tier == "stage1_filtered"
+            else "Excluded by ignore rules; selectable in final review"
+        )
+        rows.append(
+            FinalReviewRow(
+                path=path,
+                tier=tier,
+                size_bytes=_safe_file_size(path),
+                reason=reason,
+                confidence=0.0,
+                ai_risk="neutral",
+                internal_candidate=False,
+            )
+        )
+
+    return rows
+
+
+def _safe_file_size(path: str) -> int:
+    try:
+        return Path(path).stat().st_size
+    except OSError:
+        return 0
+
+
+def _resume_checkpoint_payload(
+    resume_state: dict,
+    primary_key: str,
+    legacy_key: str,
+) -> dict | None:
+    payload = resume_state.get(primary_key)
+    if payload is not None:
+        return payload
+    legacy_payload = resume_state.get(legacy_key)
+    if legacy_payload is not None:
+        return legacy_payload
+    return None
 
 
 def _apply_suffix_risk_override(

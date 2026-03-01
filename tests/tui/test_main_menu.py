@@ -32,7 +32,7 @@ def test_main_menu_settings_then_execute_then_exit() -> None:
 
     def execute_backup(current: PipelineConfig) -> list[str]:
         observed_execute.append(current)
-        return ["Stage 1", "Stage 2", "Stage 3"]
+        return ["Stage 1", "Stage 2"]
 
     def echo(line: str) -> None:
         output.append(line)

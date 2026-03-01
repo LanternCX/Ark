@@ -1,4 +1,4 @@
-"""Stage 3 final review helpers."""
+"""Final review helpers."""
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -26,7 +26,7 @@ _TREE_ACTION_HINT = (
 
 
 @dataclass(frozen=True)
-class PathReviewRow:
+class FinalReviewRow:
     """Single path candidate shown in final backup review."""
 
     path: str
@@ -35,6 +35,7 @@ class PathReviewRow:
     reason: str
     confidence: float
     ai_risk: str = "neutral"
+    internal_candidate: bool = True
 
 
 def default_selected_tiers() -> tuple[str, str]:
@@ -42,12 +43,12 @@ def default_selected_tiers() -> tuple[str, str]:
     return ("tier1", "tier2_optional")
 
 
-def render_stage3_table(
-    rows: list[PathReviewRow], console: Console | None = None
+def render_final_review_table(
+    rows: list[FinalReviewRow], console: Console | None = None
 ) -> None:
     """Render the final review table for Tier 1 and Tier 2 rows."""
     ui = console or Console()
-    table = Table(title="Stage 3 - Final Review")
+    table = Table(title="Stage 2 - Final Review")
     table.add_column("Tier")
     table.add_column("Path")
     table.add_column("Size")
@@ -64,8 +65,8 @@ def render_stage3_table(
     ui.print(table)
 
 
-def run_stage3_review(
-    rows: list[PathReviewRow],
+def run_final_review(
+    rows: list[FinalReviewRow],
     checkbox_prompt: Callable[[str, list[dict], list[str]], list[str]] | None = None,
     action_prompt: Callable[[str, list[dict]], str] | None = None,
     confirm_prompt: Callable[[str, bool], bool] | None = None,
@@ -79,16 +80,16 @@ def run_stage3_review(
     ) = None,
 ) -> set[str]:
     """Run final TUI review for backup path selection."""
-    filtered_rows = [row for row in rows if row.tier in {"tier1", "tier2"}]
+    review_rows = list(rows)
     ui = console or Console()
-    _render_stage3_banner(ui, filtered_rows)
+    _render_final_review_banner(ui, review_rows)
 
     if checkbox_prompt and action_prompt is None:
-        selected = _run_checkbox_mode(filtered_rows, checkbox_prompt)
+        selected = _run_checkbox_mode(review_rows, checkbox_prompt)
     else:
         action_fn = action_prompt or _default_action_prompt
         selected = _run_tree_mode(
-            filtered_rows,
+            review_rows,
             action_fn,
             page_size=page_size,
             hide_low_value_default=hide_low_value_default,
@@ -106,7 +107,7 @@ def run_stage3_review(
 
 
 def _run_checkbox_mode(
-    filtered_rows: list[PathReviewRow],
+    review_rows: list[FinalReviewRow],
     checkbox_fn: Callable[[str, list[dict], list[str]], list[str]],
 ) -> set[str]:
     """Run legacy flat checkbox mode."""
@@ -119,16 +120,20 @@ def _run_checkbox_mode(
             ),
             "value": row.path,
         }
-        for row in filtered_rows
+        for row in review_rows
     ]
-    defaults = [row.path for row in filtered_rows if row.tier == "tier1"]
+    defaults = [
+        row.path
+        for row in review_rows
+        if row.internal_candidate and row.tier == "tier1"
+    ]
 
     selected = checkbox_fn("Final backup selection", choices, defaults)
     return set(selected)
 
 
 def _run_tree_mode(
-    filtered_rows: list[PathReviewRow],
+    review_rows: list[FinalReviewRow],
     action_prompt: Callable[[str, list[dict]], str],
     page_size: int,
     hide_low_value_default: bool,
@@ -139,17 +144,28 @@ def _run_tree_mode(
     | None,
 ) -> set[str]:
     """Run tree-based paginated decision flow."""
-    defaults = {row.path for row in filtered_rows if row.tier == "tier1"}
+    defaults = {
+        row.path
+        for row in review_rows
+        if row.internal_candidate and row.tier == "tier1"
+    }
     if resume_state and resume_state.get("selected_paths"):
         defaults = {str(path) for path in resume_state.get("selected_paths", [])}
-    low_value_files = {row.path for row in filtered_rows if row.ai_risk == "low_value"}
-    candidates = [row.path for row in filtered_rows]
+    low_value_files = {
+        row.path
+        for row in review_rows
+        if row.internal_candidate and row.ai_risk == "low_value"
+    }
+    candidates = [row.path for row in review_rows]
+    decision_candidates = [row.path for row in review_rows if row.internal_candidate]
 
-    if ai_directory_decision_fn and not (
-        resume_state and resume_state.get("selected_paths")
+    if (
+        ai_directory_decision_fn
+        and decision_candidates
+        and not (resume_state and resume_state.get("selected_paths"))
     ):
         defaults, ai_decisions = _apply_ai_directory_decisions(
-            candidates,
+            decision_candidates,
             defaults,
             ai_directory_decision_fn,
         )
@@ -547,15 +563,18 @@ def _hidden_node_count(all_nodes: list[str], visible_nodes: list[str]) -> int:
     return max(0, len(all_nodes) - len(visible_nodes))
 
 
-def _render_stage3_banner(console: Console, rows: list[PathReviewRow]) -> None:
-    tier1 = len([row for row in rows if row.tier == "tier1"])
-    tier2 = len([row for row in rows if row.tier == "tier2"])
+def _render_final_review_banner(console: Console, rows: list[FinalReviewRow]) -> None:
+    tier1 = len([row for row in rows if row.internal_candidate and row.tier == "tier1"])
+    tier2 = len([row for row in rows if row.internal_candidate and row.tier == "tier2"])
+    manual = len(rows) - tier1 - tier2
     text = Text()
-    text.append("Stage 3 Tree Review", style="bold cyan")
+    text.append("Stage 2 Final Review", style="bold cyan")
     text.append("  ")
     text.append(f"tier1={tier1}", style="green")
     text.append("  ")
     text.append(f"tier2={tier2}", style="blue")
+    text.append("  ")
+    text.append(f"manual={manual}", style="yellow")
     console.print(Panel(text, border_style="cyan"))
 
 
