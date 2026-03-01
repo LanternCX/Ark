@@ -44,177 +44,92 @@ Config file path: `<runtime-root>/.ark/config.json`
   - `src/rules/baseline.ignore`
   - `src/rules/suffix_rules.toml`
 
-## TUI Stage Guide
+## Guided Setup Flow
 
-This section explains each TUI stage in user terms: what it does, what happens if you choose it, and what is recommended.
+The easiest way to use Ark is to make decisions in order: configure backup paths, optionally configure AI, run one dry run, then run the real copy.
 
-### Stage 0: Main Menu
+### Runtime Framework
 
-1. `Settings`
-   - Purpose: configure backup and LiteLLM options.
-   - Consequence: values are saved to `<runtime-root>/.ark/config.json` and reused next run.
-   - Recommendation: finish settings before first execution.
-2. `Execute Backup`
-   - Purpose: run the full staged backup flow.
-   - Consequence: if `Dry run` is `False`, files are actually copied.
-   - Recommendation: run one dry run first.
-3. `Exit`
-   - Purpose: leave Ark.
-   - Consequence: no execution happens.
-   - Recommendation: exit only after confirming your latest settings are saved.
+Every Ark run follows the same end-to-end flow:
 
-### Stage 1: `Settings -> Backup Settings`
+1. **Start and load config**: Ark reads `<runtime-root>/.ark/config.json` and restores your last saved settings.
+2. **Main menu decision**: choose `Settings` to adjust behavior or `Execute Backup` to run immediately.
+3. **Settings become active**: once saved, updated settings are used by the current run.
+4. **Pre-run validation**: before execution, Ark checks required inputs for your chosen mode (paths, source roots, model/auth data when applicable).
+5. **Three execution stages**: Stage 1 (suffix screening), Stage 2 (path tiering), Stage 3 (final confirmation).
+6. **Write behavior**: with `Dry run = No`, confirmed files are copied; with `Dry run = Yes`, Ark only simulates and reports results.
+7. **Resume support**: checkpoints are written continuously so interrupted runs can be resumed.
 
-- `Backup target path`
-  - Purpose: destination root for mirrored files.
-  - Consequence: wrong or unwritable path causes backup failure or wrong destination.
-  - Recommendation: use a stable writable disk path.
-- `Source roots (comma separated)`
-  - Purpose: source directories Ark scans and considers for backup.
-  - Consequence: missing paths cause data omission; overly broad paths increase noise and risk.
-  - Recommendation: start from high-value directories only (for example Documents/Pictures/Projects).
-- `Dry run?`
-  - Purpose: simulate the full flow without copying.
-  - Consequence: no files are written when enabled.
-  - Recommendation: keep enabled during first validation.
-- `Non-interactive reviews?`
-  - Purpose: skip manual review prompts and use defaults.
-  - Consequence: faster runs but higher misclassification risk.
-  - Recommendation: keep disabled for important migrations.
+In short: **configure -> preview -> commit**.
 
-### Stage 2: `Settings -> LLM Settings`
+### Step 1: `Settings -> Backup Settings`
 
-- `Enable LiteLLM integration?`
-  - Purpose: turn AI-assisted decisions on or off.
-  - Consequence: when enabled, provider/model configuration is required.
-  - Recommendation: enable only after you configure provider and key.
-- `LLM provider group`
-  - Purpose: choose provider family (OpenAI-compatible, Frontier, China-friendly, Local/Custom).
-  - Consequence: controls available platforms and default model presets.
-  - Recommendation: choose the group with the best availability and cost for your region.
-- `LLM platform`
-  - Purpose: choose the exact provider endpoint.
-  - Consequence: affects compatibility, latency, and billing.
-  - Recommendation: start with a mainstream provider preset, then optimize.
-- `Recommended model preset`
-  - Purpose: choose one of three top model presets for the selected provider.
-  - Consequence: this becomes the default model seed for next step.
-  - Recommendation: pick the middle option first if you want balanced cost and quality.
-- `Override recommended model?`
-  - Purpose: decide whether to use a custom model id.
-  - Consequence: when `No`, Ark uses the preset directly and skips custom input.
-  - Recommendation: keep `No` unless you need a specific model string.
-- `LLM model`
-  - Purpose: select model used by LiteLLM calls.
-  - Consequence: impacts quality, speed, and token cost.
-  - Recommendation: this field appears only when override is enabled; use LiteLLM model ids exactly as documented (including required provider prefixes like `zai/...` or `deepseek/...`).
-- `LLM base URL (optional)`
-  - Purpose: override endpoint for compatible gateways or local services.
-  - Consequence: wrong URL causes connection failures.
-  - Recommendation: keep preset/default unless you use custom infrastructure.
-- `Gemini authentication method` (Gemini only)
-  - Purpose: choose `api_key` or `google_oauth`.
-  - Consequence: changes required credential inputs and validation rules.
-  - Recommendation: use OAuth for long-running personal workflows; use API key for quick setup.
-- `Google client id` / `Google client secret` (Gemini OAuth only)
-  - Purpose: configure OAuth client credentials used to mint refresh tokens.
-  - Consequence: invalid values block OAuth login and runtime refresh.
-  - Recommendation: create Desktop OAuth credentials and keep them local-only.
-- `Login with Google in browser now?` (Gemini OAuth only)
-  - Purpose: launch browser auth and capture refresh token immediately.
-  - Consequence: when skipped, execution will fail until refresh token is provided.
-  - Recommendation: run it during settings to avoid runtime blockers.
-- `LLM API key`
-  - Purpose: authenticate requests to the selected provider.
-  - Consequence: invalid key causes auth failures; key is stored in `<runtime-root>/.ark/config.json`.
-  - Recommendation: use a dedicated key with appropriate quota limits.
-- `Use AI suffix risk classification?`
-  - Purpose: allow AI risk labels to influence Stage 1 default suffix selections.
-  - Consequence: disabled means suffix defaults rely on local heuristics only.
-  - Recommendation: enable unless you need deterministic local-only behavior.
-- `Use AI path pruning suggestions?`
-  - Purpose: allow AI path-level scoring to influence Stage 2/Stage 3 defaults.
-  - Consequence: disabled means no AI path pruning signal is applied.
-  - Recommendation: enable for large trees where manual triage is costly.
-- `Send full file paths to AI?`
-  - Purpose: choose between minimal metadata mode and full-path mode.
-  - Consequence: full-path mode improves pruning quality but shares full path strings.
-  - Recommendation: enable only when you accept full-path sharing.
-- `Hide low-value branches by default?`
-  - Purpose: set Stage 3 initial pruning mode (`hide_low_value` or `show_all`).
-  - Consequence: affects initial visibility only; you can switch modes during review.
-  - Recommendation: enable for faster first-pass decisions.
-- `Test LLM connectivity now?`
-  - Purpose: send a `hello` probe request with current LLM settings.
-  - Consequence: immediately shows whether auth/model/endpoint are reachable and prints model reply.
-  - Recommendation: keep enabled after changing provider, model, key, or OAuth settings.
+| Option | What this controls | Behavior and consequence |
+| --- | --- | --- |
+| `Backup target path` | Destination root for copied files | If this path is wrong or not writable, backup cannot complete as expected. |
+| `Source roots (comma separated)` | Which folders Ark scans | Narrow scope can miss files; overly broad scope increases review noise and time. |
+| `Dry run?` | Whether Ark actually copies files | `Yes`: full review flow, no file writes. `No`: confirmed selections are copied. |
+| `Non-interactive reviews?` | Whether manual confirmation screens are shown | `Yes`: faster run with defaults only. `No`: you confirm selections interactively. |
 
-### Stage 3: `Execute Backup`
+Decision tip: on first use, keep `Dry run? = Yes` and `Non-interactive reviews? = No`.
 
-1. `Stage 1: Suffix Screening`
-   - Purpose: first-pass filtering by suffix categories.
-   - Consequence: selected suffixes decide which files proceed.
-   - Recommendation: be conservative if unsure; avoid filtering too aggressively.
-   - UI: suffixes are grouped by category buckets (Document/Image/Code/Archive/Media/Executable/Temp/Cache/Other).
-   - AI mode: when LLM is enabled, suffix keep/drop/not_sure defaults are generated by remote LLM classification with local fallback.
-   - Local rules mode: scan and category baselines are loaded from rule files (`src/rules/baseline.ignore`, `src/rules/suffix_rules.toml`) instead of hard-coded lists.
-2. `Stage 2: Path Tiering`
-   - Purpose: combine local signals and AI heuristics into tiers.
-   - Consequence: tier outputs shape final candidate priority.
-   - Recommendation: pay extra attention to critical personal/work directories.
-3. `Stage 3: Final Review and Backup`
-   - Purpose: final confirmation and copy execution.
-   - Consequence: with `Dry run=False`, this produces real copied files.
-   - Recommendation: use tree paging to review folder-level decisions first, then confirm selected count.
-   - Controls: `Enter` opens/expands folder, `Space` toggles selection.
+### Step 2: `Settings -> LLM Settings` (optional)
 
-### Stage 3 Tree Review
+If LiteLLM is disabled, Ark uses local rules and local heuristics only.
 
-- Final selection uses a paginated tree view instead of a flat one-line path list.
-- Folder nodes support tri-state selection:
-  - `checked`: all descendant files selected
-  - `partial`: only part of descendants selected
-  - `unchecked`: no descendants selected
-- Toggling a folder applies recursively to all descendants.
-- Low-value branches can be hidden by default to reduce noise and can be shown again in the same review session.
-- Symbol-first controls use `●`/`◐`/`○` and `▸`/`▾` with rich-colored tree panels.
-- Each folder is rendered as one line only (no duplicate open/toggle rows).
-- AI DFS mode: when LLM path decision is enabled, Stage 3 runs serial directory DFS decisions (`keep/drop/not_sure`) before interactive review.
-- In DFS mode, `drop` recursively unselects the full subtree but traversal still continues for complete-tree analysis.
-- After DFS completes, Ark prints an AI summary and then enters one final interactive confirmation pass.
+| Option | What this controls | Behavior and consequence |
+| --- | --- | --- |
+| `Enable LiteLLM integration?` | Enable AI-assisted decisions | `No`: local-only decisions. `Yes`: provider/model/auth settings become active. |
+| `LLM provider group` | Provider family | Changes available platform presets and model choices. |
+| `LLM platform` | Concrete provider endpoint | Affects compatibility, speed, and billing behavior. |
+| `Recommended model preset` | Suggested model shortcut | Pre-fills a practical model choice for the selected platform. |
+| `Override recommended model?` | Keep preset or set your own model id | `No`: use preset directly. `Yes`: you must provide an explicit model id. |
+| `LLM model (custom allowed)` | Final model id used for requests | Wrong value can cause request errors or unexpected routing. |
+| `LLM base URL (optional)` | Custom compatible endpoint | Use only when you rely on a proxy/gateway/local endpoint. |
+| `Gemini authentication method` | Gemini auth mode (`api_key` or `google_oauth`) | Controls which Gemini credentials are required. |
+| `Google client id` | Gemini OAuth app id | Required for Gemini OAuth login and refresh flow. |
+| `Google client secret` | Gemini OAuth app secret | Required for Gemini OAuth login and refresh flow. |
+| `Login with Google in browser now?` | Immediate Gemini OAuth login | Writes refresh token now so execution is not blocked later. |
+| `LLM API key` | Provider credential | Invalid key causes auth failures; value is stored in local runtime config. |
+| `Use AI suffix risk classification?` | AI defaults in Stage 1 | `No`: suffix defaults rely on local logic only. |
+| `Use AI path pruning suggestions?` | AI influence in path selection | `No`: path pruning uses local logic only. |
+| `Send full file paths to AI?` | Data-sharing scope for AI prompts | `No`: minimal metadata mode. `Yes`: includes full path strings. |
+| `Hide low-value branches by default?` | Initial Stage 3 visibility | `Yes`: starts with low-value branches hidden. |
+| `Test LLM connectivity now?` | Live probe with current settings | Sends a test request and prints immediate success/failure feedback. |
 
-### Resumable Execution
+### Step 3: `Execute Backup`
 
-- Backup runs now save checkpoints under `<runtime-root>/.ark/state/backup_runs/`.
-- If a matching unfinished run exists, Ark provides a recovery menu:
-  - `Resume latest`
-  - `Restart new`
-  - `Discard and restart`
-- Checkpoints include scan progress, AI pruning progress, stage-3 tree selection state, and copy progress.
+- `Stage 1: Suffix Screening` builds the first candidate set by file suffix and rule files.
+- `Stage 2: Path Tiering` prioritizes candidates for final review.
+- `Stage 3: Final Review and Backup` lets you confirm final selections before copy.
 
-### Runtime Progress And Logs
+In Stage 3, use `Enter` to expand folders and `Space` to toggle selection.
 
-- During execution, Ark emits live progress hints such as:
-  - current scan root/directory
-  - current AI batch processing status
-  - current file copy progress
-- Runtime logs are written to `<runtime-root>/.ark/logs/ark.log` with rotating log files.
-- Per-run structured events are stored as JSONL in `<runtime-root>/.ark/state/backup_runs/<run_id>.events.jsonl`.
-- LiteLLM dependency logs are filtered to reduce console noise while keeping actionable warnings.
+### Where each setting takes effect
 
-### Rule Files
+- `Backup target path`, `Source roots`, and `Dry run?` directly change the outcome of `Execute Backup`.
+- `Non-interactive reviews?` controls whether manual confirmation screens are shown.
+- LLM options are only active when LiteLLM is enabled; otherwise Ark runs in local-only decision mode.
+- `Send full file paths to AI?` changes what metadata is sent to AI, not your local file contents.
 
-- `src/rules/baseline.ignore`: open-source-style gitignore baseline used during scan pruning.
-- `src/rules/suffix_rules.toml`: suffix category and hard-drop/keep defaults used by Stage 1 fallback.
-- Per-source `.gitignore` and optional `.arkignore` are merged with baseline rules during scan.
+### If execution is interrupted
 
-### Suggested First-Run Flow
+Ark saves checkpoints under `<runtime-root>/.ark/state/backup_runs/`. On the next run, you can resume from the latest checkpoint or start a new run.
 
-1. Configure `Backup Settings`.
-2. Configure `LLM Settings`.
-3. Run `Execute Backup` with `Dry run=True`.
-4. Review logs and selections.
-5. Turn `Dry run` off and run again for real backup.
+### Runtime files you may check
+
+- Config: `<runtime-root>/.ark/config.json`
+- Log file: `<runtime-root>/.ark/logs/ark.log`
+- Run checkpoints/events: `<runtime-root>/.ark/state/backup_runs/`
+
+### Rule sources used in scanning
+
+Ark merges these rules during scanning:
+
+- `src/rules/baseline.ignore`
+- `src/rules/suffix_rules.toml`
+- per-source `.gitignore`
+- optional per-source `.arkignore`
 
 ## Privacy Boundary
 
